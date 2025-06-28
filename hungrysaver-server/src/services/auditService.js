@@ -4,7 +4,35 @@ import { logger } from '../utils/logger.js';
 
 class AuditService {
   constructor() {
-    this.db = getFirestore();
+    // Don't initialize Firebase services in constructor
+    this.db = null;
+    this.initialized = false;
+  }
+
+  /**
+   * Initialize Firebase services (called lazily)
+   */
+  initialize() {
+    if (this.initialized) return;
+    
+    try {
+      this.db = getFirestore();
+      this.initialized = true;
+      logger.info('AuditService initialized successfully');
+    } catch (error) {
+      logger.error('Failed to initialize AuditService:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get database instance (with lazy initialization)
+   */
+  getDb() {
+    if (!this.initialized) {
+      this.initialize();
+    }
+    return this.db;
   }
 
   /**
@@ -12,6 +40,7 @@ class AuditService {
    */
   async logStatusChange(itemId, itemType, fromStatus, toStatus, userId, additionalData = {}) {
     try {
+      const db = this.getDb();
       const auditLog = {
         itemId,
         itemType,
@@ -25,7 +54,7 @@ class AuditService {
         ipAddress: additionalData.ipAddress || null
       };
 
-      await this.db.collection(COLLECTIONS.AUDIT_LOGS).add(auditLog);
+      await db.collection(COLLECTIONS.AUDIT_LOGS).add(auditLog);
       
       logger.info(`Audit log created: ${itemType} ${itemId} status changed from ${fromStatus} to ${toStatus} by ${userId}`);
     } catch (error) {
@@ -39,6 +68,7 @@ class AuditService {
    */
   async logUserAction(userId, action, details = {}) {
     try {
+      const db = this.getDb();
       const auditLog = {
         userId,
         action,
@@ -48,7 +78,7 @@ class AuditService {
         ipAddress: details.ipAddress || null
       };
 
-      await this.db.collection(COLLECTIONS.AUDIT_LOGS).add(auditLog);
+      await db.collection(COLLECTIONS.AUDIT_LOGS).add(auditLog);
       
       logger.info(`User action logged: ${userId} performed ${action}`);
     } catch (error) {
@@ -62,7 +92,8 @@ class AuditService {
    */
   async getItemAuditLogs(itemId, itemType) {
     try {
-      const snapshot = await this.db.collection(COLLECTIONS.AUDIT_LOGS)
+      const db = this.getDb();
+      const snapshot = await db.collection(COLLECTIONS.AUDIT_LOGS)
         .where('itemId', '==', itemId)
         .where('itemType', '==', itemType)
         .orderBy('timestamp', 'desc')
@@ -83,7 +114,8 @@ class AuditService {
    */
   async getUserAuditLogs(userId, limit = 50) {
     try {
-      const snapshot = await this.db.collection(COLLECTIONS.AUDIT_LOGS)
+      const db = this.getDb();
+      const snapshot = await db.collection(COLLECTIONS.AUDIT_LOGS)
         .where('userId', '==', userId)
         .orderBy('timestamp', 'desc')
         .limit(limit)
@@ -104,7 +136,8 @@ class AuditService {
    */
   async getAuditLogsByDateRange(startDate, endDate, limit = 100) {
     try {
-      const snapshot = await this.db.collection(COLLECTIONS.AUDIT_LOGS)
+      const db = this.getDb();
+      const snapshot = await db.collection(COLLECTIONS.AUDIT_LOGS)
         .where('timestamp', '>=', startDate)
         .where('timestamp', '<=', endDate)
         .orderBy('timestamp', 'desc')
@@ -126,10 +159,11 @@ class AuditService {
    */
   async getSystemStats(days = 30) {
     try {
+      const db = this.getDb();
       const startDate = new Date();
       startDate.setDate(startDate.getDate() - days);
 
-      const snapshot = await this.db.collection(COLLECTIONS.AUDIT_LOGS)
+      const snapshot = await db.collection(COLLECTIONS.AUDIT_LOGS)
         .where('timestamp', '>=', startDate)
         .get();
 
