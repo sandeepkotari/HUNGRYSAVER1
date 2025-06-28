@@ -5,7 +5,7 @@ A comprehensive community support platform connecting donors, volunteers, and co
 ## Project Structure
 
 ```
-hungrysaver-client/     # Frontend React application
+project/                # Frontend React application
 ├── src/
 │   ├── components/     # Reusable UI components
 │   ├── pages/         # Page components
@@ -22,9 +22,9 @@ hungrysaver-client/     # Frontend React application
 
 ### Frontend (Client)
 
-1. Navigate to the client directory:
+1. Navigate to the project directory:
 ```bash
-cd hungrysaver-client
+cd project
 ```
 
 2. Install dependencies:
@@ -95,7 +95,7 @@ npm run lint     # Run ESLint
 
 ### Environment Variables
 
-Create a `.env` file in the client directory with your Firebase configuration:
+Create a `.env` file in the project directory with your Firebase configuration:
 
 ```env
 VITE_FIREBASE_API_KEY=your_api_key
