@@ -7,7 +7,28 @@ import { logger } from '../utils/logger.js';
 
 class VolunteerController {
   constructor() {
-    this.db = getFirestore();
+    this.db = null;
+    this.initialized = false;
+  }
+
+  /**
+   * Initialize Firestore connection
+   */
+  initialize() {
+    if (!this.initialized) {
+      this.db = getFirestore();
+      this.initialized = true;
+    }
+  }
+
+  /**
+   * Get Firestore instance with lazy initialization
+   */
+  getDb() {
+    if (!this.initialized) {
+      this.initialize();
+    }
+    return this.db;
   }
 
   /**
@@ -25,7 +46,7 @@ class VolunteerController {
         });
       }
 
-      const volunteerDoc = await this.db.collection(COLLECTIONS.USERS).doc(id).get();
+      const volunteerDoc = await this.getDb().collection(COLLECTIONS.USERS).doc(id).get();
 
       if (!volunteerDoc.exists) {
         return res.status(404).json({
@@ -76,7 +97,7 @@ class VolunteerController {
       // Add update timestamp
       updates.updatedAt = new Date();
 
-      await this.db.collection(COLLECTIONS.USERS).doc(id).update(updates);
+      await this.getDb().collection(COLLECTIONS.USERS).doc(id).update(updates);
 
       // Log the update
       await auditService.logUserAction(id, 'profile_updated', updates);
@@ -106,7 +127,7 @@ class VolunteerController {
 
       const standardizedLocation = locationService.validateLocation(location);
 
-      const snapshot = await this.db.collection(COLLECTIONS.USERS)
+      const snapshot = await this.getDb().collection(COLLECTIONS.USERS)
         .where('userType', '==', 'volunteer')
         .where('location', '==', standardizedLocation)
         .where('status', '==', status)
@@ -157,7 +178,7 @@ class VolunteerController {
       }
 
       // Get donations assigned to volunteer
-      let donationsQuery = this.db.collection(COLLECTIONS.DONATIONS)
+      let donationsQuery = this.getDb().collection(COLLECTIONS.DONATIONS)
         .where('assignedTo', '==', id);
 
       if (status) {
@@ -165,7 +186,7 @@ class VolunteerController {
       }
 
       // Get requests assigned to volunteer
-      let requestsQuery = this.db.collection(COLLECTIONS.REQUESTS)
+      let requestsQuery = this.getDb().collection(COLLECTIONS.REQUESTS)
         .where('assignedTo', '==', id);
 
       if (status) {
@@ -240,12 +261,12 @@ class VolunteerController {
 
       // Get completed donations and requests
       const [donationsSnapshot, requestsSnapshot] = await Promise.all([
-        this.db.collection(COLLECTIONS.DONATIONS)
+        this.getDb().collection(COLLECTIONS.DONATIONS)
           .where('assignedTo', '==', id)
           .where('status', '==', STATUS_STAGES.DELIVERED)
           .where('deliveredAt', '>=', startDate)
           .get(),
-        this.db.collection(COLLECTIONS.REQUESTS)
+        this.getDb().collection(COLLECTIONS.REQUESTS)
           .where('assignedTo', '==', id)
           .where('status', '==', STATUS_STAGES.DELIVERED)
           .where('deliveredAt', '>=', startDate)
@@ -292,7 +313,7 @@ class VolunteerController {
     try {
       const { id } = req.params;
 
-      const volunteerDoc = await this.db.collection(COLLECTIONS.USERS).doc(id).get();
+      const volunteerDoc = await this.getDb().collection(COLLECTIONS.USERS).doc(id).get();
 
       if (!volunteerDoc.exists) {
         return res.status(404).json({
@@ -318,7 +339,7 @@ class VolunteerController {
       }
 
       // Update volunteer status
-      await this.db.collection(COLLECTIONS.USERS).doc(id).update({
+      await this.getDb().collection(COLLECTIONS.USERS).doc(id).update({
         status: 'approved',
         approvedAt: new Date(),
         approvedBy: req.user.uid
@@ -362,7 +383,7 @@ class VolunteerController {
       const { id } = req.params;
       const { reason } = req.body;
 
-      const volunteerDoc = await this.db.collection(COLLECTIONS.USERS).doc(id).get();
+      const volunteerDoc = await this.getDb().collection(COLLECTIONS.USERS).doc(id).get();
 
       if (!volunteerDoc.exists) {
         return res.status(404).json({
@@ -381,7 +402,7 @@ class VolunteerController {
       }
 
       // Update volunteer status
-      await this.db.collection(COLLECTIONS.USERS).doc(id).update({
+      await this.getDb().collection(COLLECTIONS.USERS).doc(id).update({
         status: 'rejected',
         rejectedAt: new Date(),
         rejectedBy: req.user.uid,
@@ -417,7 +438,7 @@ class VolunteerController {
     try {
       const { limit = 20, offset = 0 } = req.query;
 
-      const snapshot = await this.db.collection(COLLECTIONS.USERS)
+      const snapshot = await this.getDb().collection(COLLECTIONS.USERS)
         .where('userType', '==', 'volunteer')
         .where('status', '==', 'pending')
         .orderBy('createdAt', 'asc')
