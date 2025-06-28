@@ -9,7 +9,28 @@ import { logger } from '../utils/logger.js';
 
 class RequestController {
   constructor() {
-    this.db = getFirestore();
+    this.db = null;
+    this.initialized = false;
+  }
+
+  /**
+   * Initialize Firestore database connection
+   */
+  initialize() {
+    if (!this.initialized) {
+      this.db = getFirestore();
+      this.initialized = true;
+    }
+  }
+
+  /**
+   * Get Firestore database instance with lazy initialization
+   */
+  getDb() {
+    if (!this.initialized) {
+      this.initialize();
+    }
+    return this.db;
   }
 
   /**
@@ -39,7 +60,7 @@ class RequestController {
         updatedAt: new Date()
       };
 
-      const requestRef = await this.db.collection(COLLECTIONS.REQUESTS).add(requestData);
+      const requestRef = await this.getDb().collection(COLLECTIONS.REQUESTS).add(requestData);
       const requestId = requestRef.id;
 
       // Log the creation
@@ -88,7 +109,7 @@ class RequestController {
 
       const standardizedLocation = locationService.validateLocation(location);
 
-      let query = this.db.collection(COLLECTIONS.REQUESTS)
+      let query = this.getDb().collection(COLLECTIONS.REQUESTS)
         .where('location_lowercase', '==', standardizedLocation);
 
       if (status) {
@@ -140,7 +161,7 @@ class RequestController {
         });
       }
 
-      const snapshot = await this.db.collection(COLLECTIONS.REQUESTS)
+      const snapshot = await this.getDb().collection(COLLECTIONS.REQUESTS)
         .where('userId', '==', userId)
         .orderBy('createdAt', 'desc')
         .limit(parseInt(limit))
@@ -177,7 +198,7 @@ class RequestController {
     try {
       const { id } = req.params;
 
-      const requestDoc = await this.db.collection(COLLECTIONS.REQUESTS).doc(id).get();
+      const requestDoc = await this.getDb().collection(COLLECTIONS.REQUESTS).doc(id).get();
 
       if (!requestDoc.exists) {
         return res.status(404).json({
@@ -221,7 +242,7 @@ class RequestController {
       const userId = req.user.uid;
 
       // Get request to verify permissions
-      const requestDoc = await this.db.collection(COLLECTIONS.REQUESTS).doc(id).get();
+      const requestDoc = await this.getDb().collection(COLLECTIONS.REQUESTS).doc(id).get();
       
       if (!requestDoc.exists) {
         return res.status(404).json({
@@ -281,7 +302,7 @@ class RequestController {
       const { id } = req.params;
       const userId = req.user.uid;
 
-      const requestDoc = await this.db.collection(COLLECTIONS.REQUESTS).doc(id).get();
+      const requestDoc = await this.getDb().collection(COLLECTIONS.REQUESTS).doc(id).get();
       
       if (!requestDoc.exists) {
         return res.status(404).json({
@@ -308,7 +329,7 @@ class RequestController {
         });
       }
 
-      await this.db.collection(COLLECTIONS.REQUESTS).doc(id).delete();
+      await this.getDb().collection(COLLECTIONS.REQUESTS).doc(id).delete();
 
       // Log the deletion
       await auditService.logUserAction(userId, 'request_deleted', {
