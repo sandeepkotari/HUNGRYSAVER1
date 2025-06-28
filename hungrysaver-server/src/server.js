@@ -6,7 +6,14 @@ import compression from 'compression';
 import rateLimit from 'express-rate-limit';
 import dotenv from 'dotenv';
 
+// Load environment variables FIRST
+dotenv.config();
+
+// Initialize Firebase BEFORE importing any services that depend on it
 import { initializeFirebase } from './config/firebase.js';
+initializeFirebase();
+
+// Now import services and other modules that depend on Firebase
 import { logger } from './utils/logger.js';
 import { errorHandler, notFound } from './middleware/errorMiddleware.js';
 
@@ -19,12 +26,6 @@ import statusRoutes from './routes/statusRoutes.js';
 import locationRoutes from './routes/locationRoutes.js';
 import historyRoutes from './routes/historyRoutes.js';
 import dashboardRoutes from './routes/dashboardRoutes.js';
-
-// Load environment variables
-dotenv.config();
-
-// Initialize Firebase
-initializeFirebase();
 
 const app = express();
 const PORT = process.env.PORT || 5000;

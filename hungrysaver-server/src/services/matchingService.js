@@ -1,11 +1,49 @@
 import { getFirestore } from '../config/firebase.js';
 import { COLLECTIONS, USER_TYPES } from '../config/constants.js';
-import locationService from './locationService.js';
 import { logger } from '../utils/logger.js';
+
+// Import locationService dynamically to avoid circular dependencies
+let locationService = null;
 
 class MatchingService {
   constructor() {
-    this.db = getFirestore();
+    // Don't initialize Firebase services in constructor
+    this.db = null;
+    this.initialized = false;
+  }
+
+  /**
+   * Initialize Firebase services (called lazily)
+   */
+  initialize() {
+    if (this.initialized) return;
+    
+    try {
+      this.db = getFirestore();
+      
+      // Import location service dynamically
+      if (!locationService) {
+        import('./locationService.js').then(module => {
+          locationService = module.default;
+        });
+      }
+      
+      this.initialized = true;
+      logger.info('MatchingService initialized successfully');
+    } catch (error) {
+      logger.error('Failed to initialize MatchingService:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get database instance (with lazy initialization)
+   */
+  getDb() {
+    if (!this.initialized) {
+      this.initialize();
+    }
+    return this.db;
   }
 
   /**
@@ -13,9 +51,17 @@ class MatchingService {
    */
   async findVolunteersByLocation(location) {
     try {
-      const standardizedLocation = locationService.validateLocation(location);
+      const db = this.getDb();
       
-      const volunteersSnapshot = await this.db.collection(COLLECTIONS.USERS)
+      // Validate location if locationService is available
+      let standardizedLocation = location;
+      if (locationService) {
+        standardizedLocation = locationService.validateLocation(location);
+      } else {
+        standardizedLocation = location.toLowerCase().trim();
+      }
+      
+      const volunteersSnapshot = await db.collection(COLLECTIONS.USERS)
         .where('userType', '==', USER_TYPES.VOLUNTEER)
         .where('status', '==', 'approved')
         .where('location', '==', standardizedLocation)
@@ -39,9 +85,17 @@ class MatchingService {
    */
   async findDonorsByLocation(location) {
     try {
-      const standardizedLocation = locationService.validateLocation(location);
+      const db = this.getDb();
       
-      const donorsSnapshot = await this.db.collection(COLLECTIONS.USERS)
+      // Validate location if locationService is available
+      let standardizedLocation = location;
+      if (locationService) {
+        standardizedLocation = locationService.validateLocation(location);
+      } else {
+        standardizedLocation = location.toLowerCase().trim();
+      }
+      
+      const donorsSnapshot = await db.collection(COLLECTIONS.USERS)
         .where('userType', '==', USER_TYPES.DONOR)
         .where('status', '==', 'approved')
         .get();
@@ -67,8 +121,8 @@ class MatchingService {
       // First, try exact location match
       let volunteers = await this.findVolunteersByLocation(location);
       
-      // If no volunteers found, try nearby cities
-      if (volunteers.length === 0) {
+      // If no volunteers found and locationService is available, try nearby cities
+      if (volunteers.length === 0 && locationService) {
         const nearbyCities = locationService.findNearbyCities(location, radiusKm);
         
         for (const nearbyCity of nearbyCities) {
@@ -94,7 +148,8 @@ class MatchingService {
    */
   async matchDonationWithVolunteers(donationId) {
     try {
-      const donationDoc = await this.db.collection(COLLECTIONS.DONATIONS).doc(donationId).get();
+      const db = this.getDb();
+      const donationDoc = await db.collection(COLLECTIONS.DONATIONS).doc(donationId).get();
       
       if (!donationDoc.exists) {
         throw new Error('Donation not found');
@@ -119,7 +174,8 @@ class MatchingService {
    */
   async matchRequestWithDonors(requestId) {
     try {
-      const requestDoc = await this.db.collection(COLLECTIONS.REQUESTS).doc(requestId).get();
+      const db = this.getDb();
+      const requestDoc = await db.collection(COLLECTIONS.REQUESTS).doc(requestId).get();
       
       if (!requestDoc.exists) {
         throw new Error('Request not found');
@@ -144,12 +200,13 @@ class MatchingService {
    */
   async getVolunteerWorkload(volunteerId) {
     try {
+      const db = this.getDb();
       const [donationsSnapshot, requestsSnapshot] = await Promise.all([
-        this.db.collection(COLLECTIONS.DONATIONS)
+        db.collection(COLLECTIONS.DONATIONS)
           .where('assignedTo', '==', volunteerId)
           .where('status', 'in', ['accepted', 'picked'])
           .get(),
-        this.db.collection(COLLECTIONS.REQUESTS)
+        db.collection(COLLECTIONS.REQUESTS)
           .where('assignedTo', '==', volunteerId)
           .where('status', 'in', ['accepted', 'picked'])
           .get()
@@ -203,15 +260,23 @@ class MatchingService {
    */
   async getMatchingStats(location) {
     try {
-      const standardizedLocation = locationService.validateLocation(location);
+      const db = this.getDb();
+      
+      // Validate location if locationService is available
+      let standardizedLocation = location;
+      if (locationService) {
+        standardizedLocation = locationService.validateLocation(location);
+      } else {
+        standardizedLocation = location.toLowerCase().trim();
+      }
       
       const [volunteers, pendingDonations, pendingRequests] = await Promise.all([
         this.findVolunteersByLocation(standardizedLocation),
-        this.db.collection(COLLECTIONS.DONATIONS)
+        db.collection(COLLECTIONS.DONATIONS)
           .where('location_lowercase', '==', standardizedLocation)
           .where('status', '==', 'pending')
           .get(),
-        this.db.collection(COLLECTIONS.REQUESTS)
+        db.collection(COLLECTIONS.REQUESTS)
           .where('location_lowercase', '==', standardizedLocation)
           .where('status', '==', 'pending')
           .get()

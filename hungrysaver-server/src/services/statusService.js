@@ -1,12 +1,56 @@
 import { STATUS_STAGES, VALID_TRANSITIONS, COLLECTIONS } from '../config/constants.js';
 import { getFirestore } from '../config/firebase.js';
 import { logger } from '../utils/logger.js';
-import notificationService from './notificationService.js';
-import auditService from './auditService.js';
+
+// Import services dynamically to avoid circular dependencies
+let notificationService = null;
+let auditService = null;
 
 class StatusService {
   constructor() {
-    this.db = getFirestore();
+    // Don't initialize Firebase services in constructor
+    this.db = null;
+    this.initialized = false;
+  }
+
+  /**
+   * Initialize Firebase services (called lazily)
+   */
+  initialize() {
+    if (this.initialized) return;
+    
+    try {
+      this.db = getFirestore();
+      
+      // Import services dynamically
+      if (!notificationService) {
+        import('./notificationService.js').then(module => {
+          notificationService = module.default;
+        });
+      }
+      
+      if (!auditService) {
+        import('./auditService.js').then(module => {
+          auditService = module.default;
+        });
+      }
+      
+      this.initialized = true;
+      logger.info('StatusService initialized successfully');
+    } catch (error) {
+      logger.error('Failed to initialize StatusService:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get database instance (with lazy initialization)
+   */
+  getDb() {
+    if (!this.initialized) {
+      this.initialize();
+    }
+    return this.db;
   }
 
   /**
@@ -30,7 +74,8 @@ class StatusService {
    */
   async updateDonationStatus(donationId, newStatus, volunteerId, additionalData = {}) {
     try {
-      const donationRef = this.db.collection(COLLECTIONS.DONATIONS).doc(donationId);
+      const db = this.getDb();
+      const donationRef = db.collection(COLLECTIONS.DONATIONS).doc(donationId);
       const donationDoc = await donationRef.get();
       
       if (!donationDoc.exists) {
@@ -66,18 +111,22 @@ class StatusService {
       // Update donation
       await donationRef.update(updateData);
       
-      // Log the status change
-      await auditService.logStatusChange(
-        donationId,
-        'donation',
-        currentStatus,
-        newStatus,
-        volunteerId,
-        additionalData
-      );
+      // Log the status change (if audit service is available)
+      if (auditService) {
+        await auditService.logStatusChange(
+          donationId,
+          'donation',
+          currentStatus,
+          newStatus,
+          volunteerId,
+          additionalData
+        );
+      }
       
-      // Send notifications
-      await this.sendStatusNotifications(donationId, newStatus, donation, volunteerId);
+      // Send notifications (if notification service is available)
+      if (notificationService) {
+        await this.sendStatusNotifications(donationId, newStatus, donation, volunteerId);
+      }
       
       logger.info(`Donation ${donationId} status updated: ${currentStatus} → ${newStatus}`);
       
@@ -93,7 +142,8 @@ class StatusService {
    */
   async updateRequestStatus(requestId, newStatus, volunteerId, additionalData = {}) {
     try {
-      const requestRef = this.db.collection(COLLECTIONS.REQUESTS).doc(requestId);
+      const db = this.getDb();
+      const requestRef = db.collection(COLLECTIONS.REQUESTS).doc(requestId);
       const requestDoc = await requestRef.get();
       
       if (!requestDoc.exists) {
@@ -121,18 +171,22 @@ class StatusService {
       // Update request
       await requestRef.update(updateData);
       
-      // Log the status change
-      await auditService.logStatusChange(
-        requestId,
-        'request',
-        currentStatus,
-        newStatus,
-        volunteerId,
-        additionalData
-      );
+      // Log the status change (if audit service is available)
+      if (auditService) {
+        await auditService.logStatusChange(
+          requestId,
+          'request',
+          currentStatus,
+          newStatus,
+          volunteerId,
+          additionalData
+        );
+      }
       
-      // Send notifications
-      await this.sendStatusNotifications(requestId, newStatus, request, volunteerId);
+      // Send notifications (if notification service is available)
+      if (notificationService) {
+        await this.sendStatusNotifications(requestId, newStatus, request, volunteerId);
+      }
       
       logger.info(`Request ${requestId} status updated: ${currentStatus} → ${newStatus}`);
       
@@ -148,6 +202,8 @@ class StatusService {
    */
   async sendStatusNotifications(itemId, newStatus, itemData, volunteerId) {
     try {
+      if (!notificationService) return;
+      
       switch (newStatus) {
         case STATUS_STAGES.ACCEPTED:
           await notificationService.sendDonationAcceptedNotification(itemData, volunteerId);
@@ -170,7 +226,8 @@ class StatusService {
    */
   async getStatusHistory(itemId, itemType) {
     try {
-      const auditSnapshot = await this.db.collection(COLLECTIONS.AUDIT_LOGS)
+      const db = this.getDb();
+      const auditSnapshot = await db.collection(COLLECTIONS.AUDIT_LOGS)
         .where('itemId', '==', itemId)
         .where('itemType', '==', itemType)
         .orderBy('timestamp', 'asc')
@@ -191,9 +248,10 @@ class StatusService {
    */
   async getItemsByStatus(status, location, itemType = 'donation') {
     try {
+      const db = this.getDb();
       const collection = itemType === 'donation' ? COLLECTIONS.DONATIONS : COLLECTIONS.REQUESTS;
       
-      let query = this.db.collection(collection).where('status', '==', status);
+      let query = db.collection(collection).where('status', '==', status);
       
       if (location) {
         query = query.where('location_lowercase', '==', location.toLowerCase());

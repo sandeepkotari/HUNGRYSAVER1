@@ -2,17 +2,58 @@ import { getMessaging } from '../config/firebase.js';
 import { getFirestore } from '../config/firebase.js';
 import { COLLECTIONS, NOTIFICATION_TYPES, MOTIVATIONAL_MESSAGES } from '../config/constants.js';
 import { logger } from '../utils/logger.js';
-import emailService from './emailService.js';
+
+// Import emailService dynamically to avoid circular dependencies
+let emailService = null;
 
 class NotificationService {
   constructor() {
-    this.db = getFirestore();
+    // Don't initialize Firebase services in constructor
+    // They will be initialized when first accessed
+    this.db = null;
+    this.messaging = null;
+    this.initialized = false;
+  }
+
+  /**
+   * Initialize Firebase services (called lazily)
+   */
+  initialize() {
+    if (this.initialized) return;
+    
     try {
-      this.messaging = getMessaging();
+      this.db = getFirestore();
+      
+      try {
+        this.messaging = getMessaging();
+      } catch (error) {
+        logger.warn('FCM messaging not available:', error.message);
+        this.messaging = null;
+      }
+      
+      // Import email service dynamically
+      if (!emailService) {
+        import('./emailService.js').then(module => {
+          emailService = module.default;
+        });
+      }
+      
+      this.initialized = true;
+      logger.info('NotificationService initialized successfully');
     } catch (error) {
-      logger.warn('FCM messaging not available:', error.message);
-      this.messaging = null;
+      logger.error('Failed to initialize NotificationService:', error);
+      throw error;
     }
+  }
+
+  /**
+   * Get database instance (with lazy initialization)
+   */
+  getDb() {
+    if (!this.initialized) {
+      this.initialize();
+    }
+    return this.db;
   }
 
   /**
@@ -20,6 +61,8 @@ class NotificationService {
    */
   async notifyVolunteersNewDonation(donation, volunteers) {
     try {
+      const db = this.getDb();
+      
       const notifications = volunteers.map(volunteer => ({
         userId: volunteer.id,
         type: NOTIFICATION_TYPES.NEW_DONATION,
@@ -36,9 +79,9 @@ class NotificationService {
       }));
 
       // Save notifications to database
-      const batch = this.db.batch();
+      const batch = db.batch();
       notifications.forEach(notification => {
-        const notificationRef = this.db.collection(COLLECTIONS.NOTIFICATIONS).doc();
+        const notificationRef = db.collection(COLLECTIONS.NOTIFICATIONS).doc();
         batch.set(notificationRef, notification);
       });
       await batch.commit();
@@ -73,6 +116,8 @@ class NotificationService {
    */
   async notifyVolunteersNewRequest(request, volunteers) {
     try {
+      const db = this.getDb();
+      
       const notifications = volunteers.map(volunteer => ({
         userId: volunteer.id,
         type: NOTIFICATION_TYPES.NEW_REQUEST,
@@ -89,9 +134,9 @@ class NotificationService {
       }));
 
       // Save notifications to database
-      const batch = this.db.batch();
+      const batch = db.batch();
       notifications.forEach(notification => {
-        const notificationRef = this.db.collection(COLLECTIONS.NOTIFICATIONS).doc();
+        const notificationRef = db.collection(COLLECTIONS.NOTIFICATIONS).doc();
         batch.set(notificationRef, notification);
       });
       await batch.commit();
@@ -126,8 +171,10 @@ class NotificationService {
    */
   async sendDonationAcceptedNotification(donation, volunteerId) {
     try {
+      const db = this.getDb();
+      
       // Get volunteer details
-      const volunteerDoc = await this.db.collection(COLLECTIONS.USERS).doc(volunteerId).get();
+      const volunteerDoc = await db.collection(COLLECTIONS.USERS).doc(volunteerId).get();
       const volunteer = volunteerDoc.data();
 
       // Notify donor
@@ -145,10 +192,12 @@ class NotificationService {
         read: false
       };
 
-      await this.db.collection(COLLECTIONS.NOTIFICATIONS).add(notification);
+      await db.collection(COLLECTIONS.NOTIFICATIONS).add(notification);
 
-      // Send email notification
-      await emailService.sendDonationAcceptedEmail(donation, volunteer);
+      // Send email notification if service is available
+      if (emailService) {
+        await emailService.sendDonationAcceptedEmail(donation, volunteer);
+      }
 
       logger.info(`Sent donation accepted notification for ${donation.id}`);
     } catch (error) {
@@ -162,7 +211,8 @@ class NotificationService {
    */
   async sendDonationPickedNotification(donation, volunteerId) {
     try {
-      const volunteerDoc = await this.db.collection(COLLECTIONS.USERS).doc(volunteerId).get();
+      const db = this.getDb();
+      const volunteerDoc = await db.collection(COLLECTIONS.USERS).doc(volunteerId).get();
       const volunteer = volunteerDoc.data();
 
       // Notify donor
@@ -180,7 +230,7 @@ class NotificationService {
         read: false
       };
 
-      await this.db.collection(COLLECTIONS.NOTIFICATIONS).add(notification);
+      await db.collection(COLLECTIONS.NOTIFICATIONS).add(notification);
 
       logger.info(`Sent donation picked notification for ${donation.id}`);
     } catch (error) {
@@ -194,7 +244,8 @@ class NotificationService {
    */
   async sendDonationDeliveredNotification(donation, volunteerId) {
     try {
-      const volunteerDoc = await this.db.collection(COLLECTIONS.USERS).doc(volunteerId).get();
+      const db = this.getDb();
+      const volunteerDoc = await db.collection(COLLECTIONS.USERS).doc(volunteerId).get();
       const volunteer = volunteerDoc.data();
 
       // Generate motivational message
@@ -233,13 +284,15 @@ class NotificationService {
       };
 
       // Save both notifications
-      const batch = this.db.batch();
-      batch.set(this.db.collection(COLLECTIONS.NOTIFICATIONS).doc(), donorNotification);
-      batch.set(this.db.collection(COLLECTIONS.NOTIFICATIONS).doc(), volunteerNotification);
+      const batch = db.batch();
+      batch.set(db.collection(COLLECTIONS.NOTIFICATIONS).doc(), donorNotification);
+      batch.set(db.collection(COLLECTIONS.NOTIFICATIONS).doc(), volunteerNotification);
       await batch.commit();
 
-      // Send email notifications
-      await emailService.sendDonationDeliveredEmail(donation, volunteer, motivationalMessage);
+      // Send email notifications if service is available
+      if (emailService) {
+        await emailService.sendDonationDeliveredEmail(donation, volunteer, motivationalMessage);
+      }
 
       logger.info(`Sent donation delivered notifications for ${donation.id}`);
     } catch (error) {
@@ -305,7 +358,8 @@ class NotificationService {
    */
   async getUserNotifications(userId, limit = 20) {
     try {
-      const snapshot = await this.db.collection(COLLECTIONS.NOTIFICATIONS)
+      const db = this.getDb();
+      const snapshot = await db.collection(COLLECTIONS.NOTIFICATIONS)
         .where('userId', '==', userId)
         .orderBy('createdAt', 'desc')
         .limit(limit)
@@ -326,7 +380,8 @@ class NotificationService {
    */
   async markNotificationAsRead(notificationId) {
     try {
-      await this.db.collection(COLLECTIONS.NOTIFICATIONS)
+      const db = this.getDb();
+      await db.collection(COLLECTIONS.NOTIFICATIONS)
         .doc(notificationId)
         .update({ read: true, readAt: new Date() });
       
@@ -342,7 +397,8 @@ class NotificationService {
    */
   async getUnreadCount(userId) {
     try {
-      const snapshot = await this.db.collection(COLLECTIONS.NOTIFICATIONS)
+      const db = this.getDb();
+      const snapshot = await db.collection(COLLECTIONS.NOTIFICATIONS)
         .where('userId', '==', userId)
         .where('read', '==', false)
         .get();
