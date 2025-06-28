@@ -5,7 +5,26 @@ import { logger } from '../utils/logger.js';
 
 class HistoryController {
   constructor() {
-    this.db = getFirestore();
+    this.db = null;
+  }
+
+  /**
+   * Initialize the database connection
+   */
+  initialize() {
+    if (!this.db) {
+      this.db = getFirestore();
+    }
+  }
+
+  /**
+   * Get database instance with lazy initialization
+   */
+  getDb() {
+    if (!this.db) {
+      this.initialize();
+    }
+    return this.db;
   }
 
   /**
@@ -29,7 +48,7 @@ class HistoryController {
 
       // Get donations if requested
       if (type === 'all' || type === 'donation') {
-        let donationsQuery = this.db.collection(COLLECTIONS.DONATIONS)
+        let donationsQuery = this.getDb().collection(COLLECTIONS.DONATIONS)
           .where('userId', '==', userId);
 
         if (status) {
@@ -49,7 +68,7 @@ class HistoryController {
 
       // Get requests if requested
       if (type === 'all' || type === 'request') {
-        let requestsQuery = this.db.collection(COLLECTIONS.REQUESTS)
+        let requestsQuery = this.getDb().collection(COLLECTIONS.REQUESTS)
           .where('userId', '==', userId);
 
         if (status) {
@@ -106,7 +125,7 @@ class HistoryController {
 
       // Get the item to check permissions
       const collection = itemType === 'donation' ? COLLECTIONS.DONATIONS : COLLECTIONS.REQUESTS;
-      const itemDoc = await this.db.collection(collection).doc(itemId).get();
+      const itemDoc = await this.getDb().collection(collection).doc(itemId).get();
 
       if (!itemDoc.exists) {
         return res.status(404).json({
@@ -156,7 +175,7 @@ class HistoryController {
 
       const { userId, action, startDate, endDate, limit = 50, offset = 0 } = req.query;
 
-      let query = this.db.collection(COLLECTIONS.AUDIT_LOGS);
+      let query = this.getDb().collection(COLLECTIONS.AUDIT_LOGS);
 
       if (userId) {
         query = query.where('userId', '==', userId);
