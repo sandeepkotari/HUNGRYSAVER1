@@ -7,7 +7,12 @@ import emailService from './emailService.js';
 class NotificationService {
   constructor() {
     this.db = getFirestore();
-    this.messaging = getMessaging();
+    try {
+      this.messaging = getMessaging();
+    } catch (error) {
+      logger.warn('FCM messaging not available:', error.message);
+      this.messaging = null;
+    }
   }
 
   /**
@@ -38,25 +43,80 @@ class NotificationService {
       });
       await batch.commit();
 
-      // Send push notifications
-      const fcmTokens = volunteers
-        .filter(v => v.fcmToken)
-        .map(v => v.fcmToken);
+      // Send push notifications if FCM is available
+      if (this.messaging) {
+        const fcmTokens = volunteers
+          .filter(v => v.fcmToken)
+          .map(v => v.fcmToken);
 
-      if (fcmTokens.length > 0) {
-        await this.sendPushNotification(fcmTokens, {
-          title: `New donation in ${donation.location}!`,
-          body: `${donation.initiative.replace('-', ' ')} donation available`,
-          data: {
-            type: NOTIFICATION_TYPES.NEW_DONATION,
-            donationId: donation.id
-          }
-        });
+        if (fcmTokens.length > 0) {
+          await this.sendPushNotification(fcmTokens, {
+            title: `New donation in ${donation.location}!`,
+            body: `${donation.initiative.replace('-', ' ')} donation available`,
+            data: {
+              type: NOTIFICATION_TYPES.NEW_DONATION,
+              donationId: donation.id
+            }
+          });
+        }
       }
 
       logger.info(`Notified ${volunteers.length} volunteers about new donation ${donation.id}`);
     } catch (error) {
       logger.error('Error notifying volunteers about new donation:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Send notification to volunteers about new request
+   */
+  async notifyVolunteersNewRequest(request, volunteers) {
+    try {
+      const notifications = volunteers.map(volunteer => ({
+        userId: volunteer.id,
+        type: NOTIFICATION_TYPES.NEW_REQUEST,
+        title: `New request in ${request.location}!`,
+        message: `${request.initiative.replace('-', ' ')} support needed`,
+        data: {
+          requestId: request.id,
+          initiative: request.initiative,
+          location: request.location,
+          beneficiaryName: request.beneficiaryName
+        },
+        createdAt: new Date(),
+        read: false
+      }));
+
+      // Save notifications to database
+      const batch = this.db.batch();
+      notifications.forEach(notification => {
+        const notificationRef = this.db.collection(COLLECTIONS.NOTIFICATIONS).doc();
+        batch.set(notificationRef, notification);
+      });
+      await batch.commit();
+
+      // Send push notifications if FCM is available
+      if (this.messaging) {
+        const fcmTokens = volunteers
+          .filter(v => v.fcmToken)
+          .map(v => v.fcmToken);
+
+        if (fcmTokens.length > 0) {
+          await this.sendPushNotification(fcmTokens, {
+            title: `New request in ${request.location}!`,
+            body: `${request.initiative.replace('-', ' ')} support needed`,
+            data: {
+              type: NOTIFICATION_TYPES.NEW_REQUEST,
+              requestId: request.id
+            }
+          });
+        }
+      }
+
+      logger.info(`Notified ${volunteers.length} volunteers about new request ${request.id}`);
+    } catch (error) {
+      logger.error('Error notifying volunteers about new request:', error);
       throw error;
     }
   }
@@ -88,9 +148,7 @@ class NotificationService {
       await this.db.collection(COLLECTIONS.NOTIFICATIONS).add(notification);
 
       // Send email notification
-      if (donation.donorEmail) {
-        await emailService.sendDonationAcceptedEmail(donation, volunteer);
-      }
+      await emailService.sendDonationAcceptedEmail(donation, volunteer);
 
       logger.info(`Sent donation accepted notification for ${donation.id}`);
     } catch (error) {
@@ -181,9 +239,7 @@ class NotificationService {
       await batch.commit();
 
       // Send email notifications
-      if (donation.donorEmail) {
-        await emailService.sendDonationDeliveredEmail(donation, volunteer, motivationalMessage);
-      }
+      await emailService.sendDonationDeliveredEmail(donation, volunteer, motivationalMessage);
 
       logger.info(`Sent donation delivered notifications for ${donation.id}`);
     } catch (error) {
@@ -197,6 +253,11 @@ class NotificationService {
    */
   async sendPushNotification(tokens, payload) {
     try {
+      if (!this.messaging) {
+        logger.warn('FCM messaging not available, skipping push notification');
+        return;
+      }
+
       if (!Array.isArray(tokens)) {
         tokens = [tokens];
       }
@@ -222,7 +283,7 @@ class NotificationService {
       return response;
     } catch (error) {
       logger.error('Error sending push notification:', error);
-      throw error;
+      // Don't throw error to avoid breaking the main flow
     }
   }
 

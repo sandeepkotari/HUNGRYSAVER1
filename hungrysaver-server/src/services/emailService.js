@@ -3,15 +3,64 @@ import { logger } from '../utils/logger.js';
 
 class EmailService {
   constructor() {
-    this.transporter = nodemailer.createTransporter({
-      host: process.env.EMAIL_HOST,
-      port: process.env.EMAIL_PORT,
-      secure: false,
-      auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS
+    this.transporter = null;
+    this.isConfigured = false;
+    
+    // Only initialize if email credentials are provided
+    if (this.hasEmailConfig()) {
+      try {
+        this.transporter = nodemailer.createTransporter({
+          host: process.env.EMAIL_HOST,
+          port: parseInt(process.env.EMAIL_PORT) || 587,
+          secure: false,
+          auth: {
+            user: process.env.EMAIL_USER,
+            pass: process.env.EMAIL_PASS
+          }
+        });
+        this.isConfigured = true;
+        logger.info('Email service configured successfully');
+      } catch (error) {
+        logger.warn('Email service configuration failed:', error.message);
+        this.isConfigured = false;
       }
-    });
+    } else {
+      logger.info('Email service disabled - no credentials provided');
+    }
+  }
+
+  /**
+   * Check if email configuration is available
+   */
+  hasEmailConfig() {
+    return !!(
+      process.env.EMAIL_HOST &&
+      process.env.EMAIL_PORT &&
+      process.env.EMAIL_USER &&
+      process.env.EMAIL_PASS
+    );
+  }
+
+  /**
+   * Send email if service is configured, otherwise log the attempt
+   */
+  async sendEmail(mailOptions) {
+    if (!this.isConfigured) {
+      logger.info('Email would be sent (service disabled):', {
+        to: mailOptions.to,
+        subject: mailOptions.subject
+      });
+      return { messageId: 'disabled' };
+    }
+
+    try {
+      const result = await this.transporter.sendMail(mailOptions);
+      logger.info(`Email sent successfully to ${mailOptions.to}`);
+      return result;
+    } catch (error) {
+      logger.error('Error sending email:', error);
+      throw error;
+    }
   }
 
   /**
@@ -20,8 +69,8 @@ class EmailService {
   async sendDonationAcceptedEmail(donation, volunteer) {
     try {
       const mailOptions = {
-        from: process.env.EMAIL_USER,
-        to: donation.donorEmail,
+        from: process.env.EMAIL_USER || 'noreply@hungrysaver.com',
+        to: donation.donorEmail || donation.donorContact,
         subject: 'Your Donation Has Been Accepted! 🎉',
         html: `
           <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
@@ -59,11 +108,10 @@ class EmailService {
         `
       };
 
-      await this.transporter.sendMail(mailOptions);
-      logger.info(`Donation accepted email sent to ${donation.donorEmail}`);
+      await this.sendEmail(mailOptions);
     } catch (error) {
       logger.error('Error sending donation accepted email:', error);
-      throw error;
+      // Don't throw error to avoid breaking the main flow
     }
   }
 
@@ -73,8 +121,8 @@ class EmailService {
   async sendDonationDeliveredEmail(donation, volunteer, motivationalMessage) {
     try {
       const mailOptions = {
-        from: process.env.EMAIL_USER,
-        to: donation.donorEmail,
+        from: process.env.EMAIL_USER || 'noreply@hungrysaver.com',
+        to: donation.donorEmail || donation.donorContact,
         subject: 'Delivery Complete - You Made a Difference! 🌟',
         html: `
           <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
@@ -116,11 +164,10 @@ class EmailService {
         `
       };
 
-      await this.transporter.sendMail(mailOptions);
-      logger.info(`Donation delivered email sent to ${donation.donorEmail}`);
+      await this.sendEmail(mailOptions);
     } catch (error) {
       logger.error('Error sending donation delivered email:', error);
-      throw error;
+      // Don't throw error to avoid breaking the main flow
     }
   }
 
@@ -130,7 +177,7 @@ class EmailService {
   async sendVolunteerWelcomeEmail(volunteer) {
     try {
       const mailOptions = {
-        from: process.env.EMAIL_USER,
+        from: process.env.EMAIL_USER || 'noreply@hungrysaver.com',
         to: volunteer.email,
         subject: 'Welcome to Hungry Saver - You\'re Approved! 🎉',
         html: `
@@ -168,11 +215,10 @@ class EmailService {
         `
       };
 
-      await this.transporter.sendMail(mailOptions);
-      logger.info(`Volunteer welcome email sent to ${volunteer.email}`);
+      await this.sendEmail(mailOptions);
     } catch (error) {
       logger.error('Error sending volunteer welcome email:', error);
-      throw error;
+      // Don't throw error to avoid breaking the main flow
     }
   }
 }
