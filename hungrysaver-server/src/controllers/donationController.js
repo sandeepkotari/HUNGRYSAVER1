@@ -9,7 +9,28 @@ import { logger } from '../utils/logger.js';
 
 class DonationController {
   constructor() {
-    this.db = getFirestore();
+    this.db = null;
+    this.initialized = false;
+  }
+
+  /**
+   * Initialize Firestore connection
+   */
+  initialize() {
+    if (!this.initialized) {
+      this.db = getFirestore();
+      this.initialized = true;
+    }
+  }
+
+  /**
+   * Get Firestore instance with lazy initialization
+   */
+  getDb() {
+    if (!this.initialized) {
+      this.initialize();
+    }
+    return this.db;
   }
 
   /**
@@ -39,7 +60,7 @@ class DonationController {
         updatedAt: new Date()
       };
 
-      const donationRef = await this.db.collection(COLLECTIONS.DONATIONS).add(donationData);
+      const donationRef = await this.getDb().collection(COLLECTIONS.DONATIONS).add(donationData);
       const donationId = donationRef.id;
 
       // Log the creation
@@ -88,7 +109,7 @@ class DonationController {
 
       const standardizedLocation = locationService.validateLocation(location);
 
-      let query = this.db.collection(COLLECTIONS.DONATIONS)
+      let query = this.getDb().collection(COLLECTIONS.DONATIONS)
         .where('location_lowercase', '==', standardizedLocation);
 
       if (status) {
@@ -140,7 +161,7 @@ class DonationController {
         });
       }
 
-      const snapshot = await this.db.collection(COLLECTIONS.DONATIONS)
+      const snapshot = await this.getDb().collection(COLLECTIONS.DONATIONS)
         .where('userId', '==', userId)
         .orderBy('createdAt', 'desc')
         .limit(parseInt(limit))
@@ -177,7 +198,7 @@ class DonationController {
     try {
       const { id } = req.params;
 
-      const donationDoc = await this.db.collection(COLLECTIONS.DONATIONS).doc(id).get();
+      const donationDoc = await this.getDb().collection(COLLECTIONS.DONATIONS).doc(id).get();
 
       if (!donationDoc.exists) {
         return res.status(404).json({
@@ -221,7 +242,7 @@ class DonationController {
       const userId = req.user.uid;
 
       // Get donation to verify permissions
-      const donationDoc = await this.db.collection(COLLECTIONS.DONATIONS).doc(id).get();
+      const donationDoc = await this.getDb().collection(COLLECTIONS.DONATIONS).doc(id).get();
       
       if (!donationDoc.exists) {
         return res.status(404).json({
@@ -281,7 +302,7 @@ class DonationController {
       const { id } = req.params;
       const userId = req.user.uid;
 
-      const donationDoc = await this.db.collection(COLLECTIONS.DONATIONS).doc(id).get();
+      const donationDoc = await this.getDb().collection(COLLECTIONS.DONATIONS).doc(id).get();
       
       if (!donationDoc.exists) {
         return res.status(404).json({
@@ -308,7 +329,7 @@ class DonationController {
         });
       }
 
-      await this.db.collection(COLLECTIONS.DONATIONS).doc(id).delete();
+      await this.getDb().collection(COLLECTIONS.DONATIONS).doc(id).delete();
 
       // Log the deletion
       await auditService.logUserAction(userId, 'donation_deleted', {
@@ -342,7 +363,7 @@ class DonationController {
       const startDate = new Date();
       startDate.setDate(startDate.getDate() - parseInt(days));
 
-      let query = this.db.collection(COLLECTIONS.DONATIONS)
+      let query = this.getDb().collection(COLLECTIONS.DONATIONS)
         .where('createdAt', '>=', startDate);
 
       if (location) {
