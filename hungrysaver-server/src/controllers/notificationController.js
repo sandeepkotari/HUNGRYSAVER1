@@ -5,7 +5,26 @@ import { logger } from '../utils/logger.js';
 
 class NotificationController {
   constructor() {
-    this.db = getFirestore();
+    this.db = null;
+  }
+
+  /**
+   * Initialize Firestore connection
+   */
+  initialize() {
+    if (!this.db) {
+      this.db = getFirestore();
+    }
+  }
+
+  /**
+   * Get Firestore database instance with lazy initialization
+   */
+  getDb() {
+    if (!this.db) {
+      this.initialize();
+    }
+    return this.db;
   }
 
   /**
@@ -24,7 +43,7 @@ class NotificationController {
         });
       }
 
-      let query = this.db.collection(COLLECTIONS.NOTIFICATIONS)
+      let query = this.getDb().collection(COLLECTIONS.NOTIFICATIONS)
         .where('userId', '==', userId);
 
       if (unreadOnly === 'true') {
@@ -67,7 +86,7 @@ class NotificationController {
     try {
       const { id } = req.params;
 
-      const notificationDoc = await this.db.collection(COLLECTIONS.NOTIFICATIONS).doc(id).get();
+      const notificationDoc = await this.getDb().collection(COLLECTIONS.NOTIFICATIONS).doc(id).get();
 
       if (!notificationDoc.exists) {
         return res.status(404).json({
@@ -116,12 +135,12 @@ class NotificationController {
         });
       }
 
-      const snapshot = await this.db.collection(COLLECTIONS.NOTIFICATIONS)
+      const snapshot = await this.getDb().collection(COLLECTIONS.NOTIFICATIONS)
         .where('userId', '==', userId)
         .where('read', '==', false)
         .get();
 
-      const batch = this.db.batch();
+      const batch = this.getDb().batch();
       snapshot.docs.forEach(doc => {
         batch.update(doc.ref, { read: true, readAt: new Date() });
       });
@@ -181,7 +200,7 @@ class NotificationController {
       const { fcmToken } = req.body;
       const userId = req.user.uid;
 
-      await this.db.collection(COLLECTIONS.USERS).doc(userId).update({
+      await this.getDb().collection(COLLECTIONS.USERS).doc(userId).update({
         fcmToken,
         fcmTokenUpdatedAt: new Date()
       });
@@ -216,7 +235,7 @@ class NotificationController {
       const { userId, title, message } = req.body;
 
       // Get user's FCM token
-      const userDoc = await this.db.collection(COLLECTIONS.USERS).doc(userId).get();
+      const userDoc = await this.getDb().collection(COLLECTIONS.USERS).doc(userId).get();
 
       if (!userDoc.exists) {
         return res.status(404).json({
@@ -236,7 +255,7 @@ class NotificationController {
       }
 
       // Also save as in-app notification
-      await this.db.collection(COLLECTIONS.NOTIFICATIONS).add({
+      await this.getDb().collection(COLLECTIONS.NOTIFICATIONS).add({
         userId,
         type: 'test',
         title,
