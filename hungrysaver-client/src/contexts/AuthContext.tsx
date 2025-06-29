@@ -158,13 +158,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       const userCredential = await createUserWithEmailAndPassword(auth, userInfo.email.trim(), password);
       
+      // Determine initial status based on user type
+      let initialStatus: 'pending' | 'approved' = 'approved';
+      if (userInfo.userType === 'volunteer') {
+        initialStatus = 'pending'; // Volunteers need approval
+      }
+      
       // Prepare user document data with proper validation
       const userDocData = {
         uid: userCredential.user.uid,
         firstName: userInfo.firstName.trim(),
         email: userInfo.email.trim().toLowerCase(),
         userType: userInfo.userType,
-        status: userInfo.status,
+        status: initialStatus,
         createdAt: new Date(),
         // Only include location and education if they exist and are not empty
         ...(userInfo.location?.trim() && { location: userInfo.location.trim().toLowerCase() }),
