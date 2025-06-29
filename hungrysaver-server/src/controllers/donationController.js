@@ -4,6 +4,7 @@ import locationService from '../services/locationService.js';
 import statusService from '../services/statusService.js';
 import matchingService from '../services/matchingService.js';
 import notificationService from '../services/notificationService.js';
+import emailService from '../services/emailService.js';
 import auditService from '../services/auditService.js';
 import { logger } from '../utils/logger.js';
 
@@ -70,16 +71,24 @@ class DonationController {
         location: standardizedLocation
       });
 
-      // Find and notify volunteers
+      // Find volunteers in the same location
       const volunteers = await matchingService.findVolunteersByLocation(standardizedLocation);
+      
       if (volunteers.length > 0) {
+        // Send email notifications to volunteers
+        await emailService.sendDonationNotificationToVolunteers(
+          { id: donationId, ...donationData },
+          volunteers
+        );
+
+        // Also send push notifications
         await notificationService.notifyVolunteersNewDonation(
           { id: donationId, ...donationData },
           volunteers
         );
       }
 
-      logger.info(`New donation created: ${donationId} in ${standardizedLocation}`);
+      logger.info(`New donation created: ${donationId} in ${standardizedLocation}, notified ${volunteers.length} volunteers`);
 
       res.status(201).json({
         success: true,

@@ -78,6 +78,26 @@ const checkIsAdmin = (email: string | null): boolean => {
   return email === adminEmail;
 };
 
+// Send registration confirmation email
+const sendRegistrationConfirmationEmail = async (userData: UserData) => {
+  try {
+    const response = await fetch('/api/auth/send-confirmation-email', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(userData),
+    });
+
+    if (!response.ok) {
+      console.warn('Failed to send confirmation email:', response.statusText);
+    }
+  } catch (error) {
+    console.warn('Error sending confirmation email:', error);
+    // Don't throw error to avoid breaking registration
+  }
+};
+
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [userData, setUserData] = useState<UserData | null>(null);
@@ -157,6 +177,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       // Set user data in context
       setUserData(userDocData);
       
+      // Send confirmation email (non-blocking)
+      sendRegistrationConfirmationEmail(userDocData);
+      
     } catch (error) {
       // If it's a Firebase Auth error, use our error handler
       if (error && typeof error === 'object' && 'code' in error) {
@@ -200,6 +223,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         
         await setDoc(doc(db, 'users', result.user.uid), userDocData);
         setUserData(userDocData);
+        
+        // Send confirmation email for new Google users
+        sendRegistrationConfirmationEmail(userDocData);
       }
     } catch (error) {
       throw new Error(getErrorMessage(error as AuthError));

@@ -34,6 +34,7 @@ import statusRoutes from './routes/statusRoutes.js';
 import locationRoutes from './routes/locationRoutes.js';
 import historyRoutes from './routes/historyRoutes.js';
 import dashboardRoutes from './routes/dashboardRoutes.js';
+import authRoutes from './routes/authRoutes.js';
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -72,6 +73,20 @@ app.get('/', (req, res) => {
     emailService: {
       configured: !!(process.env.EMAIL_HOST && process.env.EMAIL_USER && process.env.EMAIL_PASS),
       host: process.env.EMAIL_HOST || 'Not configured'
+    },
+    features: {
+      userRegistrationEmails: 'Enabled',
+      donationNotifications: 'Enabled',
+      volunteerAlerts: 'Enabled',
+      statusTracking: 'Enabled'
+    },
+    endpoints: {
+      donations: '/api/donations',
+      requests: '/api/requests',
+      volunteers: '/api/volunteers',
+      notifications: '/api/notifications',
+      auth: '/api/auth',
+      dashboard: '/api/dashboard'
     }
   });
 });
@@ -91,6 +106,7 @@ app.get('/health', (req, res) => {
 });
 
 // API Routes
+app.use('/api/auth', authRoutes);
 app.use('/api/donations', donationRoutes);
 app.use('/api/requests', requestRoutes);
 app.use('/api/volunteers', volunteerRoutes);
@@ -114,6 +130,8 @@ app.listen(PORT, () => {
   const emailConfigured = !!(process.env.EMAIL_HOST && process.env.EMAIL_USER && process.env.EMAIL_PASS);
   if (emailConfigured) {
     logger.info(`📧 Email service configured with host: ${process.env.EMAIL_HOST}`);
+    logger.info(`✅ Registration confirmation emails: ENABLED`);
+    logger.info(`✅ Donation notification emails: ENABLED`);
   } else {
     logger.warn(`📧 Email service disabled - missing credentials`);
   }
