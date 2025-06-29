@@ -6,7 +6,28 @@ import { logger } from '../utils/logger.js';
 
 class DashboardController {
   constructor() {
-    this.db = getFirestore();
+    this.db = null;
+    this.initialized = false;
+  }
+
+  /**
+   * Initialize Firestore connection
+   */
+  initialize() {
+    if (!this.initialized) {
+      this.db = getFirestore();
+      this.initialized = true;
+    }
+  }
+
+  /**
+   * Get Firestore database instance with lazy initialization
+   */
+  getDb() {
+    if (!this.initialized) {
+      this.initialize();
+    }
+    return this.db;
   }
 
   /**
@@ -28,16 +49,18 @@ class DashboardController {
       const startDate = new Date();
       startDate.setDate(startDate.getDate() - parseInt(days));
 
+      const db = this.getDb();
+
       // Get volunteer info
-      const volunteerDoc = await this.db.collection(COLLECTIONS.USERS).doc(volunteerId).get();
+      const volunteerDoc = await db.collection(COLLECTIONS.USERS).doc(volunteerId).get();
       const volunteer = volunteerDoc.data();
 
       // Get assignments
       const [donationsSnapshot, requestsSnapshot] = await Promise.all([
-        this.db.collection(COLLECTIONS.DONATIONS)
+        db.collection(COLLECTIONS.DONATIONS)
           .where('assignedTo', '==', volunteerId)
           .get(),
-        this.db.collection(COLLECTIONS.REQUESTS)
+        db.collection(COLLECTIONS.REQUESTS)
           .where('assignedTo', '==', volunteerId)
           .get()
       ]);
@@ -103,12 +126,14 @@ class DashboardController {
       const startDate = new Date();
       startDate.setDate(startDate.getDate() - parseInt(days));
 
+      const db = this.getDb();
+
       // Get donor info
-      const donorDoc = await this.db.collection(COLLECTIONS.USERS).doc(donorId).get();
+      const donorDoc = await db.collection(COLLECTIONS.USERS).doc(donorId).get();
       const donor = donorDoc.data();
 
       // Get donations
-      const donationsSnapshot = await this.db.collection(COLLECTIONS.DONATIONS)
+      const donationsSnapshot = await db.collection(COLLECTIONS.DONATIONS)
         .where('userId', '==', donorId)
         .get();
 
@@ -176,12 +201,14 @@ class DashboardController {
       const startDate = new Date();
       startDate.setDate(startDate.getDate() - parseInt(days));
 
+      const db = this.getDb();
+
       // Get user info
-      const userDoc = await this.db.collection(COLLECTIONS.USERS).doc(userId).get();
+      const userDoc = await db.collection(COLLECTIONS.USERS).doc(userId).get();
       const user = userDoc.data();
 
       // Get requests
-      const requestsSnapshot = await this.db.collection(COLLECTIONS.REQUESTS)
+      const requestsSnapshot = await db.collection(COLLECTIONS.REQUESTS)
         .where('userId', '==', userId)
         .get();
 
@@ -238,6 +265,8 @@ class DashboardController {
       const startDate = new Date();
       startDate.setDate(startDate.getDate() - parseInt(days));
 
+      const db = this.getDb();
+
       // Get overall statistics
       const [
         donationsSnapshot,
@@ -245,13 +274,13 @@ class DashboardController {
         volunteersSnapshot,
         pendingVolunteersSnapshot
       ] = await Promise.all([
-        this.db.collection(COLLECTIONS.DONATIONS).get(),
-        this.db.collection(COLLECTIONS.REQUESTS).get(),
-        this.db.collection(COLLECTIONS.USERS)
+        db.collection(COLLECTIONS.DONATIONS).get(),
+        db.collection(COLLECTIONS.REQUESTS).get(),
+        db.collection(COLLECTIONS.USERS)
           .where('userType', '==', 'volunteer')
           .where('status', '==', 'approved')
           .get(),
-        this.db.collection(COLLECTIONS.USERS)
+        db.collection(COLLECTIONS.USERS)
           .where('userType', '==', 'volunteer')
           .where('status', '==', 'pending')
           .get()
@@ -316,19 +345,21 @@ class DashboardController {
       const startDate = new Date();
       startDate.setDate(startDate.getDate() - parseInt(days));
 
+      const db = this.getDb();
+
       // Get location statistics
-      const locationStats = await locationService.getLocationStats(this.db, standardizedLocation);
+      const locationStats = await locationService.getLocationStats(db, standardizedLocation);
       const matchingStats = await matchingService.getMatchingStats(standardizedLocation);
 
       // Get recent activity in location
       const [donationsSnapshot, requestsSnapshot] = await Promise.all([
-        this.db.collection(COLLECTIONS.DONATIONS)
+        db.collection(COLLECTIONS.DONATIONS)
           .where('location_lowercase', '==', standardizedLocation)
           .where('createdAt', '>=', startDate)
           .orderBy('createdAt', 'desc')
           .limit(10)
           .get(),
-        this.db.collection(COLLECTIONS.REQUESTS)
+        db.collection(COLLECTIONS.REQUESTS)
           .where('location_lowercase', '==', standardizedLocation)
           .where('createdAt', '>=', startDate)
           .orderBy('createdAt', 'desc')
@@ -370,13 +401,15 @@ class DashboardController {
 
   async getAvailableTasksForLocation(location) {
     try {
+      const db = this.getDb();
+      
       const [donationsSnapshot, requestsSnapshot] = await Promise.all([
-        this.db.collection(COLLECTIONS.DONATIONS)
+        db.collection(COLLECTIONS.DONATIONS)
           .where('location_lowercase', '==', location.toLowerCase())
           .where('status', '==', STATUS_STAGES.PENDING)
           .orderBy('createdAt', 'desc')
           .get(),
-        this.db.collection(COLLECTIONS.REQUESTS)
+        db.collection(COLLECTIONS.REQUESTS)
           .where('location_lowercase', '==', location.toLowerCase())
           .where('status', '==', STATUS_STAGES.PENDING)
           .orderBy('createdAt', 'desc')
@@ -395,7 +428,9 @@ class DashboardController {
 
   async getRecentActivity(userId, limit = 5) {
     try {
-      const auditSnapshot = await this.db.collection(COLLECTIONS.AUDIT_LOGS)
+      const db = this.getDb();
+      
+      const auditSnapshot = await db.collection(COLLECTIONS.AUDIT_LOGS)
         .where('userId', '==', userId)
         .orderBy('timestamp', 'desc')
         .limit(limit)
@@ -413,7 +448,9 @@ class DashboardController {
 
   async getDonorImpactSummary(donorId) {
     try {
-      const donationsSnapshot = await this.db.collection(COLLECTIONS.DONATIONS)
+      const db = this.getDb();
+      
+      const donationsSnapshot = await db.collection(COLLECTIONS.DONATIONS)
         .where('userId', '==', donorId)
         .where('status', '==', STATUS_STAGES.DELIVERED)
         .get();
@@ -452,11 +489,12 @@ class DashboardController {
 
   async getLocationBreakdown() {
     try {
+      const db = this.getDb();
       const cities = locationService.getValidCities();
       const locationStats = {};
 
       for (const city of cities) {
-        const stats = await locationService.getLocationStats(this.db, city);
+        const stats = await locationService.getLocationStats(db, city);
         locationStats[city] = stats;
       }
 
@@ -469,7 +507,9 @@ class DashboardController {
 
   async getSystemRecentActivity(limit = 10) {
     try {
-      const auditSnapshot = await this.db.collection(COLLECTIONS.AUDIT_LOGS)
+      const db = this.getDb();
+      
+      const auditSnapshot = await db.collection(COLLECTIONS.AUDIT_LOGS)
         .orderBy('timestamp', 'desc')
         .limit(limit)
         .get();
