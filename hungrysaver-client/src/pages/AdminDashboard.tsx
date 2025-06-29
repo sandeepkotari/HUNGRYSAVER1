@@ -1,9 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { collection, query, where, getDocs, doc, updateDoc, orderBy } from 'firebase/firestore';
-import { Check, X, Clock, MapPin, GraduationCap, Mail, User, Crown, Heart, Users, Package, TrendingUp } from 'lucide-react';
+import { collection, query, where, getDocs, doc, updateDoc, orderBy, Timestamp } from 'firebase/firestore';
+import { Check, X, Clock, MapPin, GraduationCap, Mail, User, Crown, Heart, Users, Package, TrendingUp, Calendar, Activity } from 'lucide-react';
 import { db } from '../config/firebase';
 import { useAuth } from '../contexts/AuthContext';
-import emailService from '../services/emailService';
 
 interface PendingVolunteer {
   uid: string;
@@ -19,19 +18,39 @@ interface DashboardStats {
   totalDonations: number;
   totalRequests: number;
   approvedVolunteers: number;
+  todayDonations: number;
+  todayRequests: number;
+  completedTasks: number;
+}
+
+interface TodayActivity {
+  id: string;
+  type: 'donation' | 'request' | 'task_completed';
+  title: string;
+  description: string;
+  location: string;
+  timestamp: any;
+  status: string;
+  volunteerName?: string;
+  donorName?: string;
 }
 
 const AdminDashboard: React.FC = () => {
   const [pendingVolunteers, setPendingVolunteers] = useState<PendingVolunteer[]>([]);
+  const [todayActivity, setTodayActivity] = useState<TodayActivity[]>([]);
   const [stats, setStats] = useState<DashboardStats>({
     pendingVolunteers: 0,
     totalDonations: 0,
     totalRequests: 0,
-    approvedVolunteers: 0
+    approvedVolunteers: 0,
+    todayDonations: 0,
+    todayRequests: 0,
+    completedTasks: 0
   });
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [showSuccessModal, setShowSuccessModal] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<'overview' | 'volunteers' | 'activity'>('overview');
   const { isAdmin } = useAuth();
 
   useEffect(() => {
@@ -42,6 +61,11 @@ const AdminDashboard: React.FC = () => {
 
   const fetchDashboardData = async () => {
     try {
+      // Get today's date range
+      const today = new Date();
+      const startOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+      const endOfDay = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
+
       // Fetch pending volunteers
       const pendingQuery = query(
         collection(db, 'users'),
@@ -65,17 +89,81 @@ const AdminDashboard: React.FC = () => {
       );
       const approvedSnapshot = await getDocs(approvedQuery);
 
-      // Fetch donations count
+      // Fetch all donations
       const donationsSnapshot = await getDocs(collection(db, 'donations'));
+      const allDonations = donationsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       
-      // Fetch requests count
+      // Fetch all requests
       const requestsSnapshot = await getDocs(collection(db, 'community_requests'));
+      const allRequests = requestsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+      // Filter today's donations
+      const todayDonations = allDonations.filter(donation => {
+        const createdAt = donation.createdAt?.toDate?.() || new Date(0);
+        return createdAt >= startOfDay && createdAt < endOfDay;
+      });
+
+      // Filter today's requests
+      const todayRequests = allRequests.filter(request => {
+        const createdAt = request.createdAt?.toDate?.() || new Date(0);
+        return createdAt >= startOfDay && createdAt < endOfDay;
+      });
+
+      // Get completed tasks (delivered donations and fulfilled requests)
+      const completedDonations = allDonations.filter(d => d.status === 'delivered');
+      const completedRequests = allRequests.filter(r => r.status === 'delivered');
+
+      // Build today's activity feed
+      const activityFeed: TodayActivity[] = [
+        ...todayDonations.map(donation => ({
+          id: donation.id,
+          type: 'donation' as const,
+          title: `New Donation: ${donation.initiative?.replace('-', ' ') || 'Unknown'}`,
+          description: donation.description || 'No description',
+          location: donation.location || 'Unknown',
+          timestamp: donation.createdAt,
+          status: donation.status || 'pending',
+          donorName: donation.donorName
+        })),
+        ...todayRequests.map(request => ({
+          id: request.id,
+          type: 'request' as const,
+          title: `Community Request: ${request.initiative?.replace('-', ' ') || 'Unknown'}`,
+          description: request.description || 'No description',
+          location: request.location || 'Unknown',
+          timestamp: request.createdAt,
+          status: request.status || 'pending'
+        })),
+        ...completedDonations.filter(d => {
+          const deliveredAt = d.deliveredAt?.toDate?.() || new Date(0);
+          return deliveredAt >= startOfDay && deliveredAt < endOfDay;
+        }).map(donation => ({
+          id: `completed-${donation.id}`,
+          type: 'task_completed' as const,
+          title: `Task Completed: ${donation.initiative?.replace('-', ' ') || 'Unknown'}`,
+          description: `Donation delivered successfully`,
+          location: donation.location || 'Unknown',
+          timestamp: donation.deliveredAt,
+          status: 'completed',
+          volunteerName: donation.assignedTo,
+          donorName: donation.donorName
+        }))
+      ].sort((a, b) => {
+        const aTime = a.timestamp?.toDate?.() || new Date(0);
+        const bTime = b.timestamp?.toDate?.() || new Date(0);
+        return bTime.getTime() - aTime.getTime();
+      });
+
+      setTodayActivity(activityFeed);
 
       setStats({
         pendingVolunteers: volunteers.length,
-        totalDonations: donationsSnapshot.size,
-        totalRequests: requestsSnapshot.size,
-        approvedVolunteers: approvedSnapshot.size
+        totalDonations: allDonations.length,
+        totalRequests: allRequests.length,
+        approvedVolunteers: approvedSnapshot.size,
+        todayDonations: todayDonations.length,
+        todayRequests: todayRequests.length,
+        completedTasks: completedDonations.length + completedRequests.length
       });
       
     } catch (error) {
@@ -95,19 +183,6 @@ const AdminDashboard: React.FC = () => {
       };
 
       await updateDoc(doc(db, 'users', uid), updateData);
-      
-      // Send welcome email if approved
-      if (approved && volunteerData) {
-        try {
-          await emailService.sendVolunteerWelcomeEmail({
-            ...volunteerData,
-            status: 'approved'
-          });
-        } catch (emailError) {
-          console.error('Error sending welcome email:', emailError);
-          // Don't fail the approval if email fails
-        }
-      }
       
       // Remove from pending list
       setPendingVolunteers(prev => prev.filter(vol => vol.uid !== uid));
@@ -142,17 +217,6 @@ const AdminDashboard: React.FC = () => {
           status: 'approved',
           approvedAt: new Date()
         });
-
-        // Send welcome email
-        try {
-          await emailService.sendVolunteerWelcomeEmail({
-            ...volunteer,
-            status: 'approved'
-          });
-        } catch (emailError) {
-          console.error('Error sending welcome email to:', volunteer.email, emailError);
-          // Don't fail the approval if email fails
-        }
       });
       
       await Promise.all(promises);
@@ -172,6 +236,26 @@ const AdminDashboard: React.FC = () => {
       console.error('Error bulk approving volunteers:', error);
     } finally {
       setActionLoading(null);
+    }
+  };
+
+  const getActivityIcon = (type: string) => {
+    switch (type) {
+      case 'donation': return <Heart className="h-5 w-5 text-green-400" />;
+      case 'request': return <Users className="h-5 w-5 text-blue-400" />;
+      case 'task_completed': return <Check className="h-5 w-5 text-purple-400" />;
+      default: return <Activity className="h-5 w-5 text-gray-400" />;
+    }
+  };
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'pending': return 'bg-yellow-500/20 text-yellow-400 border-yellow-500';
+      case 'accepted': return 'bg-blue-500/20 text-blue-400 border-blue-500';
+      case 'picked': return 'bg-orange-500/20 text-orange-400 border-orange-500';
+      case 'delivered': return 'bg-green-500/20 text-green-400 border-green-500';
+      case 'completed': return 'bg-purple-500/20 text-purple-400 border-purple-500';
+      default: return 'bg-gray-500/20 text-gray-400 border-gray-500';
     }
   };
 
@@ -203,205 +287,346 @@ const AdminDashboard: React.FC = () => {
           <div className="flex items-center space-x-3">
             <Crown className="h-8 w-8 text-yellow-200" />
             <div>
-              <h1 className="text-2xl font-bold text-white">👑 Welcome Admin</h1>
-              <p className="text-yellow-200">You're managing Hungry Saver operations across all cities</p>
+              <h1 className="text-2xl font-bold text-white">👑 Admin Dashboard</h1>
+              <p className="text-yellow-200">Managing Hungry Saver operations across all cities</p>
             </div>
           </div>
         </div>
 
         {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-          <div className="bg-gray-800 rounded-lg p-6 border border-yellow-500/30">
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 mb-8">
+          <div className="bg-gray-800 rounded-lg p-4 border border-yellow-500/30">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-3xl font-bold text-yellow-400">{stats.pendingVolunteers}</p>
-                <p className="text-gray-400">Pending Volunteers</p>
+                <p className="text-2xl font-bold text-yellow-400">{stats.pendingVolunteers}</p>
+                <p className="text-gray-400 text-sm">Pending</p>
               </div>
-              <Clock className="h-10 w-10 text-yellow-400" />
+              <Clock className="h-8 w-8 text-yellow-400" />
             </div>
           </div>
           
-          <div className="bg-gray-800 rounded-lg p-6 border border-green-500/30">
+          <div className="bg-gray-800 rounded-lg p-4 border border-green-500/30">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-3xl font-bold text-green-400">{stats.approvedVolunteers}</p>
-                <p className="text-gray-400">Active Volunteers</p>
+                <p className="text-2xl font-bold text-green-400">{stats.approvedVolunteers}</p>
+                <p className="text-gray-400 text-sm">Volunteers</p>
               </div>
-              <Users className="h-10 w-10 text-green-400" />
+              <Users className="h-8 w-8 text-green-400" />
             </div>
           </div>
           
-          <div className="bg-gray-800 rounded-lg p-6 border border-blue-500/30">
+          <div className="bg-gray-800 rounded-lg p-4 border border-blue-500/30">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-3xl font-bold text-blue-400">{stats.totalDonations}</p>
-                <p className="text-gray-400">Total Donations</p>
+                <p className="text-2xl font-bold text-blue-400">{stats.todayDonations}</p>
+                <p className="text-gray-400 text-sm">Today's Donations</p>
               </div>
-              <Heart className="h-10 w-10 text-blue-400" />
+              <Heart className="h-8 w-8 text-blue-400" />
             </div>
           </div>
           
-          <div className="bg-gray-800 rounded-lg p-6 border border-purple-500/30">
+          <div className="bg-gray-800 rounded-lg p-4 border border-purple-500/30">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-3xl font-bold text-purple-400">{stats.totalRequests}</p>
-                <p className="text-gray-400">Community Requests</p>
+                <p className="text-2xl font-bold text-purple-400">{stats.todayRequests}</p>
+                <p className="text-gray-400 text-sm">Today's Requests</p>
               </div>
-              <Package className="h-10 w-10 text-purple-400" />
+              <Package className="h-8 w-8 text-purple-400" />
+            </div>
+          </div>
+
+          <div className="bg-gray-800 rounded-lg p-4 border border-orange-500/30">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-2xl font-bold text-orange-400">{stats.totalDonations}</p>
+                <p className="text-gray-400 text-sm">Total Donations</p>
+              </div>
+              <TrendingUp className="h-8 w-8 text-orange-400" />
+            </div>
+          </div>
+
+          <div className="bg-gray-800 rounded-lg p-4 border border-pink-500/30">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-2xl font-bold text-pink-400">{stats.completedTasks}</p>
+                <p className="text-gray-400 text-sm">Completed</p>
+              </div>
+              <Check className="h-8 w-8 text-pink-400" />
             </div>
           </div>
         </div>
 
-        {/* Pending Volunteers Section */}
-        <div className="bg-gray-800 rounded-lg shadow-lg overflow-hidden">
-          <div className="px-6 py-4 border-b border-gray-700 flex items-center justify-between">
-            <div>
-              <h2 className="text-xl font-semibold text-white">Pending Volunteer Applications</h2>
-              <p className="text-gray-400 text-sm">Review and approve new volunteers to enable their dashboard access</p>
+        {/* Tab Navigation */}
+        <div className="flex space-x-1 bg-gray-800 p-1 rounded-lg mb-6 w-fit">
+          {[
+            { key: 'overview', label: 'Overview', icon: TrendingUp },
+            { key: 'volunteers', label: 'Volunteers', icon: Users },
+            { key: 'activity', label: 'Today\'s Activity', icon: Activity }
+          ].map((tab) => {
+            const Icon = tab.icon;
+            return (
+              <button
+                key={tab.key}
+                onClick={() => setActiveTab(tab.key as any)}
+                className={`px-4 py-2 rounded-md text-sm font-medium transition-all flex items-center space-x-2 ${
+                  activeTab === tab.key
+                    ? 'bg-green-600 text-white'
+                    : 'text-gray-400 hover:text-white hover:bg-gray-700'
+                }`}
+              >
+                <Icon className="h-4 w-4" />
+                <span>{tab.label}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Tab Content */}
+        {activeTab === 'overview' && (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            <div className="bg-gray-800 rounded-lg p-6">
+              <h3 className="text-xl font-bold text-white mb-4">📊 Platform Overview</h3>
+              <div className="space-y-4">
+                <div className="flex justify-between items-center">
+                  <span className="text-gray-300">Total Platform Users</span>
+                  <span className="text-white font-bold">{stats.approvedVolunteers + stats.totalDonations + stats.totalRequests}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-gray-300">Active Volunteers</span>
+                  <span className="text-green-400 font-bold">{stats.approvedVolunteers}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-gray-300">Total Donations</span>
+                  <span className="text-blue-400 font-bold">{stats.totalDonations}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-gray-300">Community Requests</span>
+                  <span className="text-purple-400 font-bold">{stats.totalRequests}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-gray-300">Completed Tasks</span>
+                  <span className="text-pink-400 font-bold">{stats.completedTasks}</span>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-gray-800 rounded-lg p-6">
+              <h3 className="text-xl font-bold text-white mb-4">📈 Today's Summary</h3>
+              <div className="space-y-4">
+                <div className="bg-blue-500/20 p-4 rounded-lg border border-blue-500">
+                  <div className="flex items-center justify-between">
+                    <span className="text-blue-400 font-medium">New Donations</span>
+                    <span className="text-blue-400 font-bold text-xl">{stats.todayDonations}</span>
+                  </div>
+                </div>
+                <div className="bg-purple-500/20 p-4 rounded-lg border border-purple-500">
+                  <div className="flex items-center justify-between">
+                    <span className="text-purple-400 font-medium">New Requests</span>
+                    <span className="text-purple-400 font-bold text-xl">{stats.todayRequests}</span>
+                  </div>
+                </div>
+                <div className="bg-green-500/20 p-4 rounded-lg border border-green-500">
+                  <div className="flex items-center justify-between">
+                    <span className="text-green-400 font-medium">Total Activity</span>
+                    <span className="text-green-400 font-bold text-xl">{todayActivity.length}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'volunteers' && (
+          <div className="bg-gray-800 rounded-lg shadow-lg overflow-hidden">
+            <div className="px-6 py-4 border-b border-gray-700 flex items-center justify-between">
+              <div>
+                <h2 className="text-xl font-semibold text-white">Pending Volunteer Applications</h2>
+                <p className="text-gray-400 text-sm">Review and approve new volunteers to enable their dashboard access</p>
+              </div>
+              
+              {pendingVolunteers.length > 0 && (
+                <button
+                  onClick={handleBulkApproval}
+                  disabled={actionLoading === 'bulk'}
+                  className="bg-green-600 hover:bg-green-700 disabled:bg-green-800 text-white px-4 py-2 rounded-lg font-medium transition-colors flex items-center space-x-2"
+                >
+                  {actionLoading === 'bulk' ? (
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />
+                  ) : (
+                    <Check className="h-4 w-4" />
+                  )}
+                  <span>Approve All ({pendingVolunteers.length})</span>
+                </button>
+              )}
             </div>
             
-            {pendingVolunteers.length > 0 && (
-              <button
-                onClick={handleBulkApproval}
-                disabled={actionLoading === 'bulk'}
-                className="bg-green-600 hover:bg-green-700 disabled:bg-green-800 text-white px-4 py-2 rounded-lg font-medium transition-colors flex items-center space-x-2"
-              >
-                {actionLoading === 'bulk' ? (
-                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />
-                ) : (
-                  <Check className="h-4 w-4" />
-                )}
-                <span>Approve All ({pendingVolunteers.length})</span>
-              </button>
-            )}
-          </div>
-          
-          {pendingVolunteers.length === 0 ? (
-            <div className="p-8 text-center">
-              <TrendingUp className="h-12 w-12 text-green-500 mx-auto mb-4" />
-              <p className="text-green-400 text-lg font-medium">All caught up!</p>
-              <p className="text-gray-400">No pending volunteer applications to review</p>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-gray-700">
-                <thead className="bg-gray-700">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">
-                      Volunteer
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">
-                      Contact
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">
-                      Location
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">
-                      Education
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">
-                      Applied
-                    </th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">
-                      Actions
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="bg-gray-800 divide-y divide-gray-700">
-                  {pendingVolunteers.map((volunteer) => (
-                    <tr key={volunteer.uid} className="hover:bg-gray-700 transition-colors">
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="flex items-center">
-                          <div className="h-10 w-10 rounded-full bg-green-500 flex items-center justify-center">
-                            <span className="text-white font-medium">
-                              {volunteer.firstName.charAt(0).toUpperCase()}
+            {pendingVolunteers.length === 0 ? (
+              <div className="p-8 text-center">
+                <TrendingUp className="h-12 w-12 text-green-500 mx-auto mb-4" />
+                <p className="text-green-400 text-lg font-medium">All caught up!</p>
+                <p className="text-gray-400">No pending volunteer applications to review</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="min-w-full divide-y divide-gray-700">
+                  <thead className="bg-gray-700">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">
+                        Volunteer
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">
+                        Contact
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">
+                        Location
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">
+                        Education
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">
+                        Applied
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">
+                        Actions
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-gray-800 divide-y divide-gray-700">
+                    {pendingVolunteers.map((volunteer) => (
+                      <tr key={volunteer.uid} className="hover:bg-gray-700 transition-colors">
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="flex items-center">
+                            <div className="h-10 w-10 rounded-full bg-green-500 flex items-center justify-center">
+                              <span className="text-white font-medium">
+                                {volunteer.firstName.charAt(0).toUpperCase()}
+                              </span>
+                            </div>
+                            <div className="ml-4">
+                              <div className="text-sm font-medium text-white">{volunteer.firstName}</div>
+                              <div className="text-sm text-gray-400">New Volunteer</div>
+                            </div>
+                          </div>
+                        </td>
+                        
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="flex items-center text-sm text-gray-300">
+                            <Mail className="h-4 w-4 mr-2 text-gray-400" />
+                            {volunteer.email}
+                          </div>
+                        </td>
+                        
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="flex items-center">
+                            <MapPin className="h-4 w-4 mr-2 text-gray-400" />
+                            <span className="text-sm text-gray-300 capitalize">
+                              {volunteer.location}
                             </span>
                           </div>
-                          <div className="ml-4">
-                            <div className="text-sm font-medium text-white">{volunteer.firstName}</div>
-                            <div className="text-sm text-gray-400">New Volunteer</div>
+                        </td>
+                        
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <div className="flex items-center">
+                            <GraduationCap className="h-4 w-4 mr-2 text-gray-400" />
+                            <span className="text-sm text-gray-300">{volunteer.education}</span>
                           </div>
-                        </div>
-                      </td>
-                      
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="flex items-center text-sm text-gray-300">
-                          <Mail className="h-4 w-4 mr-2 text-gray-400" />
-                          {volunteer.email}
-                        </div>
-                      </td>
-                      
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="flex items-center">
-                          <MapPin className="h-4 w-4 mr-2 text-gray-400" />
-                          <span className="text-sm text-gray-300 capitalize">
-                            {volunteer.location}
+                        </td>
+                        
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">
+                          {volunteer.createdAt?.toDate?.()?.toLocaleDateString() || 'Recently'}
+                        </td>
+                        
+                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                          <div className="flex space-x-2">
+                            <button
+                              onClick={() => handleApproval(volunteer.uid, true, volunteer.firstName, volunteer)}
+                              disabled={actionLoading === volunteer.uid}
+                              className="bg-green-600 hover:bg-green-700 disabled:bg-green-800 text-white px-3 py-1 rounded-md transition-colors flex items-center space-x-1"
+                            >
+                              {actionLoading === volunteer.uid ? (
+                                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />
+                              ) : (
+                                <Check className="h-4 w-4" />
+                              )}
+                              <span>Approve</span>
+                            </button>
+                            
+                            <button
+                              onClick={() => handleApproval(volunteer.uid, false, volunteer.firstName)}
+                              disabled={actionLoading === volunteer.uid}
+                              className="bg-red-600 hover:bg-red-700 disabled:bg-red-800 text-white px-3 py-1 rounded-md transition-colors flex items-center space-x-1"
+                            >
+                              <X className="h-4 w-4" />
+                              <span>Reject</span>
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+
+        {activeTab === 'activity' && (
+          <div className="bg-gray-800 rounded-lg shadow-lg overflow-hidden">
+            <div className="px-6 py-4 border-b border-gray-700">
+              <h2 className="text-xl font-semibold text-white">Today's Activity Feed</h2>
+              <p className="text-gray-400 text-sm">Real-time updates of donations, requests, and completed tasks</p>
+            </div>
+            
+            {todayActivity.length === 0 ? (
+              <div className="p-8 text-center">
+                <Calendar className="h-12 w-12 text-gray-500 mx-auto mb-4" />
+                <p className="text-gray-400 text-lg">No activity today yet</p>
+                <p className="text-gray-500 text-sm">Check back later for updates</p>
+              </div>
+            ) : (
+              <div className="max-h-96 overflow-y-auto">
+                {todayActivity.map((activity) => (
+                  <div key={activity.id} className="px-6 py-4 border-b border-gray-700 hover:bg-gray-700/50 transition-colors">
+                    <div className="flex items-start space-x-3">
+                      <div className="flex-shrink-0 mt-1">
+                        {getActivityIcon(activity.type)}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between">
+                          <h4 className="text-sm font-medium text-white truncate">
+                            {activity.title}
+                          </h4>
+                          <span className={`px-2 py-1 rounded-full text-xs border font-medium ${getStatusColor(activity.status)}`}>
+                            {activity.status}
                           </span>
                         </div>
-                      </td>
-                      
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="flex items-center">
-                          <GraduationCap className="h-4 w-4 mr-2 text-gray-400" />
-                          <span className="text-sm text-gray-300">{volunteer.education}</span>
+                        <p className="text-sm text-gray-300 mt-1">{activity.description}</p>
+                        <div className="flex items-center space-x-4 mt-2 text-xs text-gray-400">
+                          <span className="flex items-center">
+                            <MapPin className="h-3 w-3 mr-1" />
+                            {activity.location}
+                          </span>
+                          {activity.donorName && (
+                            <span className="flex items-center">
+                              <User className="h-3 w-3 mr-1" />
+                              {activity.donorName}
+                            </span>
+                          )}
+                          {activity.volunteerName && (
+                            <span className="flex items-center">
+                              <Users className="h-3 w-3 mr-1" />
+                              {activity.volunteerName}
+                            </span>
+                          )}
+                          <span>{activity.timestamp?.toDate?.()?.toLocaleTimeString() || 'Unknown time'}</span>
                         </div>
-                      </td>
-                      
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-300">
-                        {volunteer.createdAt?.toDate?.()?.toLocaleDateString() || 'Recently'}
-                      </td>
-                      
-                      <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                        <div className="flex space-x-2">
-                          <button
-                            onClick={() => handleApproval(volunteer.uid, true, volunteer.firstName, volunteer)}
-                            disabled={actionLoading === volunteer.uid}
-                            className="bg-green-600 hover:bg-green-700 disabled:bg-green-800 text-white px-3 py-1 rounded-md transition-colors flex items-center space-x-1"
-                          >
-                            {actionLoading === volunteer.uid ? (
-                              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white" />
-                            ) : (
-                              <Check className="h-4 w-4" />
-                            )}
-                            <span>Approve</span>
-                          </button>
-                          
-                          <button
-                            onClick={() => handleApproval(volunteer.uid, false, volunteer.firstName)}
-                            disabled={actionLoading === volunteer.uid}
-                            className="bg-red-600 hover:bg-red-700 disabled:bg-red-800 text-white px-3 py-1 rounded-md transition-colors flex items-center space-x-1"
-                          >
-                            <X className="h-4 w-4" />
-                            <span>Reject</span>
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-
-        {/* Approval Flow Information */}
-        <div className="mt-8 bg-blue-500/20 border border-blue-500 rounded-lg p-6">
-          <h3 className="text-lg font-semibold text-white mb-4">🔒 Volunteer Approval Flow</h3>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
-            <div className="bg-blue-500/10 p-4 rounded-lg">
-              <h4 className="text-blue-400 font-medium mb-2">1. Registration</h4>
-              <p className="text-blue-200">Volunteers register with status: "pending"</p>
-            </div>
-            <div className="bg-blue-500/10 p-4 rounded-lg">
-              <h4 className="text-blue-400 font-medium mb-2">2. Admin Review</h4>
-              <p className="text-blue-200">Admin reviews and approves/rejects applications</p>
-            </div>
-            <div className="bg-blue-500/10 p-4 rounded-lg">
-              <h4 className="text-blue-400 font-medium mb-2">3. Dashboard Access</h4>
-              <p className="text-blue-200">Approved volunteers can access location-specific dashboards</p>
-            </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
-        </div>
+        )}
 
         {/* Success Modal */}
         {showSuccessModal && (

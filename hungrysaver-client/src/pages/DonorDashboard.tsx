@@ -1,5 +1,8 @@
-import React, { useState } from 'react';
-import { Heart, BookOpen, Shield, Home, Zap, Building } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Heart, BookOpen, Shield, Home, Zap, Building, Users, Calendar, MapPin, Clock, CheckCircle } from 'lucide-react';
+import { collection, query, getDocs, addDoc, updateDoc, doc, where } from 'firebase/firestore';
+import { db } from '../config/firebase';
+import { useAuth } from '../contexts/AuthContext';
 import { useFormSubmission } from '../hooks/useFormSubmission';
 import AnnamitraSevaForm from '../components/DonorForms/AnnamitraSevaForm';
 import VidyaJyothiForm from '../components/DonorForms/VidyaJyothiForm';
@@ -8,9 +11,29 @@ import PunarAshaForm from '../components/DonorForms/PunarAshaForm';
 import RakshaJyothiForm from '../components/DonorForms/RakshaJyothiForm';
 import JyothiNilayamForm from '../components/DonorForms/JyothiNilayamForm';
 
+interface CommunityRequest {
+  id: string;
+  userId: string;
+  initiative: string;
+  location_lowercase: string;
+  address: string;
+  beneficiaryName: string;
+  beneficiaryContact: string;
+  description: string;
+  urgency: 'low' | 'medium' | 'high';
+  status: 'pending' | 'accepted' | 'completed';
+  createdAt: any;
+  acceptedBy?: string;
+  acceptedAt?: any;
+}
+
 const DonorDashboard: React.FC = () => {
   const [selectedInitiative, setSelectedInitiative] = useState('annamitra-seva');
+  const [activeTab, setActiveTab] = useState<'donate' | 'requests'>('donate');
+  const [communityRequests, setCommunityRequests] = useState<CommunityRequest[]>([]);
+  const [requestsLoading, setRequestsLoading] = useState(true);
   const { submitForm, loading, error, success, resetForm } = useFormSubmission('donor');
+  const { userData } = useAuth();
 
   const initiatives = [
     {
@@ -63,6 +86,47 @@ const DonorDashboard: React.FC = () => {
     }
   ];
 
+  useEffect(() => {
+    if (activeTab === 'requests') {
+      fetchCommunityRequests();
+    }
+  }, [activeTab]);
+
+  const fetchCommunityRequests = async () => {
+    try {
+      setRequestsLoading(true);
+      
+      // Fetch all pending community requests (no location filtering for donors)
+      const requestsQuery = query(
+        collection(db, 'community_requests'),
+        where('status', '==', 'pending')
+      );
+      
+      const snapshot = await getDocs(requestsQuery);
+      const requests = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as CommunityRequest[];
+
+      // Sort by urgency and creation date
+      const sortedRequests = requests.sort((a, b) => {
+        const urgencyOrder = { high: 3, medium: 2, low: 1 };
+        const urgencyDiff = urgencyOrder[b.urgency] - urgencyOrder[a.urgency];
+        if (urgencyDiff !== 0) return urgencyDiff;
+        
+        const aTime = a.createdAt?.toDate?.() || new Date(0);
+        const bTime = b.createdAt?.toDate?.() || new Date(0);
+        return bTime.getTime() - aTime.getTime();
+      });
+
+      setCommunityRequests(sortedRequests);
+    } catch (error) {
+      console.error('Error fetching community requests:', error);
+    } finally {
+      setRequestsLoading(false);
+    }
+  };
+
   const handleFormSubmit = async (formData: any): Promise<boolean> => {
     const submissionData = {
       ...formData,
@@ -77,6 +141,71 @@ const DonorDashboard: React.FC = () => {
       }, 3000);
     }
     return result;
+  };
+
+  const handleAcceptRequest = async (requestId: string, requestData: CommunityRequest) => {
+    try {
+      // Create a donation based on the community request
+      const donationData = {
+        userId: userData?.uid,
+        initiative: requestData.initiative,
+        location: requestData.location_lowercase,
+        location_lowercase: requestData.location_lowercase,
+        address: requestData.address,
+        donorName: userData?.firstName || 'Anonymous Donor',
+        donorContact: userData?.email || '',
+        description: `Donation in response to community request: ${requestData.description}`,
+        details: {
+          originalRequestId: requestId,
+          beneficiaryName: requestData.beneficiaryName,
+          beneficiaryContact: requestData.beneficiaryContact,
+          urgency: requestData.urgency
+        },
+        status: 'pending',
+        createdAt: new Date(),
+        updatedAt: new Date()
+      };
+
+      // Add the donation
+      await addDoc(collection(db, 'donations'), donationData);
+
+      // Update the community request status
+      await updateDoc(doc(db, 'community_requests', requestId), {
+        status: 'accepted',
+        acceptedBy: userData?.uid,
+        acceptedAt: new Date(),
+        updatedAt: new Date()
+      });
+
+      // Remove from local state
+      setCommunityRequests(prev => prev.filter(req => req.id !== requestId));
+
+      alert('Thank you! Your donation has been submitted and volunteers will be notified.');
+    } catch (error) {
+      console.error('Error accepting request:', error);
+      alert('Error submitting donation. Please try again.');
+    }
+  };
+
+  const getUrgencyColor = (urgency: string) => {
+    switch (urgency) {
+      case 'high': return 'bg-red-500/20 text-red-400 border-red-500';
+      case 'medium': return 'bg-yellow-500/20 text-yellow-400 border-yellow-500';
+      case 'low': return 'bg-green-500/20 text-green-400 border-green-500';
+      default: return 'bg-gray-500/20 text-gray-400 border-gray-500';
+    }
+  };
+
+  const getInitiativeEmoji = (initiative: string) => {
+    const emojiMap: { [key: string]: string } = {
+      'annamitra-seva': '🍛',
+      'vidya-jyothi': '📚',
+      'suraksha-setu': '🛡️',
+      'punarasha': '🏠',
+      'raksha-jyothi': '⚡',
+      'jyothi-nilayam': '🏛️'
+    };
+    return emojiMap[initiative.toLowerCase()] || '💝';
   };
 
   const selectedInitiativeData = initiatives.find(init => init.id === selectedInitiative);
@@ -118,58 +247,154 @@ const DonorDashboard: React.FC = () => {
             Donor Dashboard
           </h1>
           <p className="text-xl text-gray-300 max-w-3xl mx-auto leading-relaxed">
-            Choose an initiative to make your donation. Your generosity helps build a stronger, more compassionate community.
+            Choose how you want to make a difference. Your generosity helps build a stronger, more compassionate community.
           </p>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Initiative Selection */}
-          <div className="lg:col-span-1">
-            <h2 className="text-2xl font-bold text-white mb-6">Select Initiative</h2>
-            <div className="space-y-3">
-              {initiatives.map((initiative) => {
-                const Icon = initiative.icon;
-                
-                return (
-                  <button
-                    key={initiative.id}
-                    onClick={() => setSelectedInitiative(initiative.id)}
-                    className={`w-full text-left p-4 rounded-lg border-2 transition-all ${
-                      selectedInitiative === initiative.id
-                        ? 'border-green-500 bg-green-500/20'
-                        : 'border-gray-600 bg-gray-800 hover:border-gray-500'
-                    }`}
-                  >
-                    <div className="flex items-start space-x-3">
-                      <Icon className="h-6 w-6 mt-1 flex-shrink-0 text-green-400" />
-                      <div>
-                        <h3 className="font-medium text-lg text-white">
-                          {initiative.title}
-                        </h3>
-                        <p className="text-sm mt-1 text-gray-300">
-                          {initiative.description}
-                        </p>
+        {/* Tab Navigation */}
+        <div className="flex space-x-1 bg-gray-800 p-1 rounded-lg mb-8 w-fit mx-auto">
+          {[
+            { key: 'donate', label: 'Make Donation', icon: Heart },
+            { key: 'requests', label: 'Community Requests', icon: Users }
+          ].map((tab) => {
+            const Icon = tab.icon;
+            return (
+              <button
+                key={tab.key}
+                onClick={() => setActiveTab(tab.key as any)}
+                className={`px-6 py-3 rounded-md text-sm font-medium transition-all flex items-center space-x-2 ${
+                  activeTab === tab.key
+                    ? 'bg-green-600 text-white'
+                    : 'text-gray-400 hover:text-white hover:bg-gray-700'
+                }`}
+              >
+                <Icon className="h-4 w-4" />
+                <span>{tab.label}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Tab Content */}
+        {activeTab === 'donate' && (
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            {/* Initiative Selection */}
+            <div className="lg:col-span-1">
+              <h2 className="text-2xl font-bold text-white mb-6">Select Initiative</h2>
+              <div className="space-y-3">
+                {initiatives.map((initiative) => {
+                  const Icon = initiative.icon;
+                  
+                  return (
+                    <button
+                      key={initiative.id}
+                      onClick={() => setSelectedInitiative(initiative.id)}
+                      className={`w-full text-left p-4 rounded-lg border-2 transition-all ${
+                        selectedInitiative === initiative.id
+                          ? 'border-green-500 bg-green-500/20'
+                          : 'border-gray-600 bg-gray-800 hover:border-gray-500'
+                      }`}
+                    >
+                      <div className="flex items-start space-x-3">
+                        <Icon className="h-6 w-6 mt-1 flex-shrink-0 text-green-400" />
+                        <div>
+                          <h3 className="font-medium text-lg text-white">
+                            {initiative.title}
+                          </h3>
+                          <p className="text-sm mt-1 text-gray-300">
+                            {initiative.description}
+                          </p>
+                        </div>
                       </div>
-                    </div>
-                  </button>
-                );
-              })}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Donation Form */}
+            <div className="lg:col-span-2">
+              {FormComponent && (
+                <FormComponent onSubmit={handleFormSubmit} loading={loading} />
+              )}
+              
+              {error && (
+                <div className="mt-4 bg-red-500/20 border border-red-500 text-red-200 px-4 py-3 rounded-lg">
+                  <p className="text-sm">{error}</p>
+                </div>
+              )}
             </div>
           </div>
+        )}
 
-          {/* Donation Form */}
-          <div className="lg:col-span-2">
-            {FormComponent && (
-              <FormComponent onSubmit={handleFormSubmit} loading={loading} />
-            )}
-            
-            {error && (
-              <div className="mt-4 bg-red-500/20 border border-red-500 text-red-200 px-4 py-3 rounded-lg">
-                <p className="text-sm">{error}</p>
+        {activeTab === 'requests' && (
+          <div>
+            <div className="text-center mb-8">
+              <h2 className="text-3xl font-bold text-white mb-4">Community Requests</h2>
+              <p className="text-gray-300 max-w-2xl mx-auto">
+                Help community members in need by accepting their requests. Your donation will be matched with volunteers for delivery.
+              </p>
+            </div>
+
+            {requestsLoading ? (
+              <div className="text-center py-12">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-400 mx-auto mb-4"></div>
+                <p className="text-gray-400">Loading community requests...</p>
+              </div>
+            ) : communityRequests.length === 0 ? (
+              <div className="bg-gray-800 rounded-lg p-8 text-center">
+                <Users className="h-12 w-12 text-gray-500 mx-auto mb-4" />
+                <h3 className="text-xl font-semibold text-white mb-2">No pending requests</h3>
+                <p className="text-gray-400">All community requests have been fulfilled. Check back later!</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {communityRequests.map((request) => (
+                  <div key={request.id} className="bg-gray-800 rounded-lg p-6 hover:shadow-lg transition-all duration-300 border border-gray-700 hover:border-green-500/50">
+                    <div className="flex items-start justify-between mb-4">
+                      <div className="flex items-center space-x-3">
+                        <div className="text-2xl">{getInitiativeEmoji(request.initiative)}</div>
+                        <div>
+                          <h3 className="text-lg font-semibold text-white capitalize">
+                            {request.initiative.replace('-', ' ')}
+                          </h3>
+                          <span className={`px-2 py-1 rounded-full text-xs border font-medium ${getUrgencyColor(request.urgency)}`}>
+                            {request.urgency.toUpperCase()} PRIORITY
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <p className="text-gray-300 mb-4 leading-relaxed">{request.description}</p>
+
+                    <div className="space-y-2 mb-4">
+                      <div className="flex items-center space-x-2 text-sm text-gray-400">
+                        <MapPin className="h-4 w-4" />
+                        <span className="capitalize">{request.location_lowercase}</span>
+                      </div>
+                      <div className="flex items-center space-x-2 text-sm text-gray-400">
+                        <Users className="h-4 w-4" />
+                        <span>{request.beneficiaryName}</span>
+                      </div>
+                      <div className="flex items-center space-x-2 text-sm text-gray-400">
+                        <Clock className="h-4 w-4" />
+                        <span>{request.createdAt?.toDate?.()?.toLocaleDateString() || 'Recently'}</span>
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={() => handleAcceptRequest(request.id, request)}
+                      className="w-full bg-green-600 hover:bg-green-700 text-white py-3 rounded-lg font-semibold transition-colors flex items-center justify-center space-x-2"
+                    >
+                      <Heart className="h-4 w-4" />
+                      <span>Donate to Help</span>
+                    </button>
+                  </div>
+                ))}
               </div>
             )}
           </div>
-        </div>
+        )}
 
         {/* Impact Stats */}
         <div className="mt-16 bg-gray-800 rounded-xl p-8">
