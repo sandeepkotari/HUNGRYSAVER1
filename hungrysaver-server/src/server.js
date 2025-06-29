@@ -53,6 +53,17 @@ app.use(morgan('combined', { stream: { write: message => logger.info(message.tri
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
+// Root route
+app.get('/', (req, res) => {
+  res.json({
+    message: 'Hungry Saver Server is working! 🚀',
+    status: 'OK',
+    timestamp: new Date().toISOString(),
+    version: '1.0.0',
+    environment: process.env.NODE_ENV || 'development'
+  });
+});
+
 // Health check endpoint
 app.get('/health', (req, res) => {
   res.status(200).json({
