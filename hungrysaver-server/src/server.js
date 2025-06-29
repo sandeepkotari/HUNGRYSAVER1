@@ -6,10 +6,18 @@ import compression from 'compression';
 import rateLimit from 'express-rate-limit';
 import dotenv from 'dotenv';
 
-// Load environment variables FIRST
+// Load environment variables FIRST - this is critical!
 dotenv.config();
 
-// Initialize Firebase BEFORE importing any services that depend on it
+// Debug: Log email environment variables to verify they're loaded
+console.log('🔍 Environment Variables Check:');
+console.log('EMAIL_HOST:', process.env.EMAIL_HOST || 'NOT SET');
+console.log('EMAIL_PORT:', process.env.EMAIL_PORT || 'NOT SET');
+console.log('EMAIL_USER:', process.env.EMAIL_USER || 'NOT SET');
+console.log('EMAIL_PASS:', process.env.EMAIL_PASS ? '***HIDDEN***' : 'NOT SET');
+console.log('NODE_ENV:', process.env.NODE_ENV || 'development');
+
+// Initialize Firebase AFTER environment variables are loaded
 import { initializeFirebase } from './config/firebase.js';
 initializeFirebase();
 
@@ -60,7 +68,11 @@ app.get('/', (req, res) => {
     status: 'OK',
     timestamp: new Date().toISOString(),
     version: '1.0.0',
-    environment: process.env.NODE_ENV || 'development'
+    environment: process.env.NODE_ENV || 'development',
+    emailService: {
+      configured: !!(process.env.EMAIL_HOST && process.env.EMAIL_USER && process.env.EMAIL_PASS),
+      host: process.env.EMAIL_HOST || 'Not configured'
+    }
   });
 });
 
@@ -70,7 +82,11 @@ app.get('/health', (req, res) => {
     status: 'OK',
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
-    environment: process.env.NODE_ENV
+    environment: process.env.NODE_ENV,
+    services: {
+      firebase: 'Connected',
+      email: !!(process.env.EMAIL_HOST && process.env.EMAIL_USER && process.env.EMAIL_PASS) ? 'Configured' : 'Disabled'
+    }
   });
 });
 
@@ -93,6 +109,14 @@ app.listen(PORT, () => {
   logger.info(`🚀 Hungry Saver Server running on port ${PORT}`);
   logger.info(`📍 Environment: ${process.env.NODE_ENV}`);
   logger.info(`🔥 Firebase initialized successfully`);
+  
+  // Log email service status
+  const emailConfigured = !!(process.env.EMAIL_HOST && process.env.EMAIL_USER && process.env.EMAIL_PASS);
+  if (emailConfigured) {
+    logger.info(`📧 Email service configured with host: ${process.env.EMAIL_HOST}`);
+  } else {
+    logger.warn(`📧 Email service disabled - missing credentials`);
+  }
 });
 
 export default app;
