@@ -19,14 +19,39 @@ const VolunteerDashboard: React.FC = () => {
   });
 
   useEffect(() => {
+    // Check if volunteer is approved and location matches
+    if (!userData || userData.userType !== 'volunteer' || userData.status !== 'approved') {
+      return;
+    }
+
+    // Ensure volunteer can only access their assigned location
+    if (location && userData.location && location.toLowerCase() !== userData.location.toLowerCase()) {
+      return;
+    }
+
     if (location) {
       fetchTasks();
     }
-  }, [location]);
+  }, [location, userData]);
 
   const fetchTasks = async () => {
     try {
-      const allTasks = await getTasksByLocation(location!);
+      // Only fetch tasks if volunteer is approved and in correct location
+      if (!userData || userData.status !== 'approved' || !userData.location) {
+        setTasks([]);
+        setLoading(false);
+        return;
+      }
+
+      // Ensure we're only fetching tasks for the volunteer's assigned location
+      const volunteerLocation = userData.location.toLowerCase();
+      if (location && location.toLowerCase() !== volunteerLocation) {
+        setTasks([]);
+        setLoading(false);
+        return;
+      }
+
+      const allTasks = await getTasksByLocation(volunteerLocation);
       
       // Transform tasks to include proper contact information
       const transformedTasks = allTasks.map(task => ({
@@ -115,6 +140,46 @@ const VolunteerDashboard: React.FC = () => {
     return emojiMap[initiative.toLowerCase()] || '💝';
   };
 
+  // Security check: Prevent access if not approved volunteer
+  if (!userData || userData.userType !== 'volunteer' || userData.status !== 'approved') {
+    return (
+      <div className="min-h-screen bg-gray-900 pt-20 flex items-center justify-center">
+        <div className="bg-gray-800 rounded-xl p-8 text-center max-w-md mx-4">
+          <AlertCircle className="h-16 w-16 text-red-500 mx-auto mb-4" />
+          <h2 className="text-2xl font-bold text-white mb-2">Access Restricted</h2>
+          <p className="text-gray-300 mb-4">
+            This dashboard is only available to approved volunteers.
+          </p>
+          <p className="text-gray-400 text-sm">
+            {userData?.userType !== 'volunteer' 
+              ? 'You need to be registered as a volunteer to access this page.'
+              : userData?.status === 'pending'
+              ? 'Your volunteer application is still pending approval.'
+              : 'Your volunteer application was not approved.'}
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // Location mismatch check
+  if (location && userData.location && location.toLowerCase() !== userData.location.toLowerCase()) {
+    return (
+      <div className="min-h-screen bg-gray-900 pt-20 flex items-center justify-center">
+        <div className="bg-gray-800 rounded-xl p-8 text-center max-w-md mx-4">
+          <MapPin className="h-16 w-16 text-yellow-500 mx-auto mb-4" />
+          <h2 className="text-2xl font-bold text-white mb-2">Wrong Location</h2>
+          <p className="text-gray-300 mb-4">
+            You can only access the dashboard for your assigned location: <strong>{userData.location}</strong>
+          </p>
+          <p className="text-gray-400 text-sm">
+            You're trying to access: {location}
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   if (loading) {
     return (
       <div className="min-h-screen bg-gray-900 pt-20 flex items-center justify-center">
@@ -131,13 +196,16 @@ const VolunteerDashboard: React.FC = () => {
           <div>
             <div className="flex items-center space-x-3 mb-2">
               <div className="bg-green-500 px-3 py-1 rounded-full">
-                <span className="text-white text-sm font-medium capitalize">{location} Volunteer</span>
+                <span className="text-white text-sm font-medium capitalize">{userData.location} Volunteer</span>
+              </div>
+              <div className="bg-blue-500 px-3 py-1 rounded-full">
+                <span className="text-white text-sm font-medium">✅ Approved</span>
               </div>
             </div>
             <h1 className="text-4xl font-bold text-white mb-2">
               Welcome back, {userData?.firstName}!
             </h1>
-            <p className="text-gray-300">Ready to make a difference in {location} today?</p>
+            <p className="text-gray-300">Ready to make a difference in {userData.location} today?</p>
           </div>
           
           <div className="mt-4 md:mt-0">
@@ -211,6 +279,18 @@ const VolunteerDashboard: React.FC = () => {
           ))}
         </div>
 
+        {/* Location Restriction Notice */}
+        <div className="bg-blue-500/20 border border-blue-500 rounded-lg p-4 mb-6">
+          <div className="flex items-center space-x-2">
+            <MapPin className="h-5 w-5 text-blue-400" />
+            <span className="text-blue-400 font-medium">Location-Based Access</span>
+          </div>
+          <p className="text-blue-200 text-sm mt-1">
+            You're viewing donations and requests specifically for <strong>{userData.location}</strong>. 
+            This ensures efficient local coordination and faster response times.
+          </p>
+        </div>
+
         {/* Tasks Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {getFilteredTasks().length === 0 ? (
@@ -219,7 +299,7 @@ const VolunteerDashboard: React.FC = () => {
               <h3 className="text-xl font-semibold text-white mb-2">No tasks available</h3>
               <p className="text-gray-400">
                 {filter === 'available' 
-                  ? `No new tasks in ${location} right now. Check back later!`
+                  ? `No new tasks in ${userData.location} right now. Check back later!`
                   : filter === 'assigned'
                   ? 'You haven\'t accepted any tasks yet.'
                   : 'No tasks found for your location.'
@@ -320,12 +400,12 @@ const VolunteerDashboard: React.FC = () => {
 
         {/* Motivational Footer */}
         <div className="mt-12 text-center bg-gradient-to-r from-green-600/20 to-green-700/20 rounded-lg p-8 border border-green-500/30">
-          <h3 className="text-2xl font-bold text-white mb-2">Making Impact in {location}</h3>
+          <h3 className="text-2xl font-bold text-white mb-2">Making Impact in {userData.location}</h3>
           <p className="text-green-300 text-lg italic">
             "Every task you complete brings hope to someone in your community"
           </p>
           <div className="mt-4 text-gray-300">
-            <p>Together, {location} volunteers have helped <span className="text-green-400 font-bold">500+</span> families this month!</p>
+            <p>Together, {userData.location} volunteers have helped <span className="text-green-400 font-bold">500+</span> families this month!</p>
           </div>
         </div>
       </div>

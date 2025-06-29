@@ -3,6 +3,7 @@ import { collection, query, where, getDocs, doc, updateDoc, orderBy } from 'fire
 import { Check, X, Clock, MapPin, GraduationCap, Mail, User, Crown, Heart, Users, Package, TrendingUp } from 'lucide-react';
 import { db } from '../config/firebase';
 import { useAuth } from '../contexts/AuthContext';
+import emailService from '../services/emailService';
 
 interface PendingVolunteer {
   uid: string;
@@ -84,13 +85,29 @@ const AdminDashboard: React.FC = () => {
     }
   };
 
-  const handleApproval = async (uid: string, approved: boolean, volunteerName: string) => {
+  const handleApproval = async (uid: string, approved: boolean, volunteerName: string, volunteerData?: any) => {
     setActionLoading(uid);
     try {
-      await updateDoc(doc(db, 'users', uid), {
+      const updateData = {
         status: approved ? 'approved' : 'rejected',
-        approvedAt: new Date()
-      });
+        approvedAt: new Date(),
+        ...(approved ? {} : { rejectedAt: new Date() })
+      };
+
+      await updateDoc(doc(db, 'users', uid), updateData);
+      
+      // Send welcome email if approved
+      if (approved && volunteerData) {
+        try {
+          await emailService.sendVolunteerWelcomeEmail({
+            ...volunteerData,
+            status: 'approved'
+          });
+        } catch (emailError) {
+          console.error('Error sending welcome email:', emailError);
+          // Don't fail the approval if email fails
+        }
+      }
       
       // Remove from pending list
       setPendingVolunteers(prev => prev.filter(vol => vol.uid !== uid));
@@ -120,12 +137,23 @@ const AdminDashboard: React.FC = () => {
     
     setActionLoading('bulk');
     try {
-      const promises = pendingVolunteers.map(volunteer =>
-        updateDoc(doc(db, 'users', volunteer.uid), {
+      const promises = pendingVolunteers.map(async (volunteer) => {
+        await updateDoc(doc(db, 'users', volunteer.uid), {
           status: 'approved',
           approvedAt: new Date()
-        })
-      );
+        });
+
+        // Send welcome email
+        try {
+          await emailService.sendVolunteerWelcomeEmail({
+            ...volunteer,
+            status: 'approved'
+          });
+        } catch (emailError) {
+          console.error('Error sending welcome email to:', volunteer.email, emailError);
+          // Don't fail the approval if email fails
+        }
+      });
       
       await Promise.all(promises);
       
@@ -229,7 +257,7 @@ const AdminDashboard: React.FC = () => {
           <div className="px-6 py-4 border-b border-gray-700 flex items-center justify-between">
             <div>
               <h2 className="text-xl font-semibold text-white">Pending Volunteer Applications</h2>
-              <p className="text-gray-400 text-sm">Review and approve new volunteers</p>
+              <p className="text-gray-400 text-sm">Review and approve new volunteers to enable their dashboard access</p>
             </div>
             
             {pendingVolunteers.length > 0 && (
@@ -326,7 +354,7 @@ const AdminDashboard: React.FC = () => {
                       <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
                         <div className="flex space-x-2">
                           <button
-                            onClick={() => handleApproval(volunteer.uid, true, volunteer.firstName)}
+                            onClick={() => handleApproval(volunteer.uid, true, volunteer.firstName, volunteer)}
                             disabled={actionLoading === volunteer.uid}
                             className="bg-green-600 hover:bg-green-700 disabled:bg-green-800 text-white px-3 py-1 rounded-md transition-colors flex items-center space-x-1"
                           >
@@ -354,6 +382,25 @@ const AdminDashboard: React.FC = () => {
               </table>
             </div>
           )}
+        </div>
+
+        {/* Approval Flow Information */}
+        <div className="mt-8 bg-blue-500/20 border border-blue-500 rounded-lg p-6">
+          <h3 className="text-lg font-semibold text-white mb-4">🔒 Volunteer Approval Flow</h3>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+            <div className="bg-blue-500/10 p-4 rounded-lg">
+              <h4 className="text-blue-400 font-medium mb-2">1. Registration</h4>
+              <p className="text-blue-200">Volunteers register with status: "pending"</p>
+            </div>
+            <div className="bg-blue-500/10 p-4 rounded-lg">
+              <h4 className="text-blue-400 font-medium mb-2">2. Admin Review</h4>
+              <p className="text-blue-200">Admin reviews and approves/rejects applications</p>
+            </div>
+            <div className="bg-blue-500/10 p-4 rounded-lg">
+              <h4 className="text-blue-400 font-medium mb-2">3. Dashboard Access</h4>
+              <p className="text-blue-200">Approved volunteers can access location-specific dashboards</p>
+            </div>
+          </div>
         </div>
 
         {/* Success Modal */}

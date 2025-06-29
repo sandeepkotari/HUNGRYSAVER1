@@ -36,7 +36,7 @@ export const submitRequest = async (data: RequestData): Promise<string> => {
   }
 };
 
-// Get donations by location
+// Get donations by location (with strict location filtering for volunteers)
 export const getDonationsByLocation = async (location: string) => {
   try {
     const q = query(
@@ -56,7 +56,7 @@ export const getDonationsByLocation = async (location: string) => {
   }
 };
 
-// Get requests by location
+// Get requests by location (with strict location filtering for volunteers)
 export const getRequestsByLocation = async (location: string) => {
   try {
     const q = query(
@@ -136,16 +136,27 @@ export const updateTaskStatus = async (
   }
 };
 
-// Get combined tasks for volunteers
+// Get combined tasks for volunteers (STRICT location filtering)
 export const getTasksByLocation = async (location: string) => {
   try {
+    // Ensure location is lowercase for consistent filtering
+    const normalizedLocation = location.toLowerCase();
+    
     const [donations, requests] = await Promise.all([
-      getDonationsByLocation(location),
-      getRequestsByLocation(location)
+      getDonationsByLocation(normalizedLocation),
+      getRequestsByLocation(normalizedLocation)
     ]);
     
+    // Double-check location filtering on client side for security
+    const filteredDonations = donations.filter(d => 
+      d.location_lowercase === normalizedLocation
+    );
+    const filteredRequests = requests.filter(r => 
+      r.location_lowercase === normalizedLocation
+    );
+    
     // Combine and sort by creation date
-    const allTasks = [...donations, ...requests].sort((a, b) => {
+    const allTasks = [...filteredDonations, ...filteredRequests].sort((a, b) => {
       const aTime = a.createdAt?.toDate?.() || new Date(0);
       const bTime = b.createdAt?.toDate?.() || new Date(0);
       return bTime.getTime() - aTime.getTime();
