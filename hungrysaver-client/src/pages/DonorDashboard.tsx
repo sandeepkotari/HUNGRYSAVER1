@@ -1,9 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { Heart, BookOpen, Shield, Home, Zap, Building, Users, Calendar, MapPin, Clock, CheckCircle } from 'lucide-react';
+import { Heart, BookOpen, Shield, Home, Zap, Building, Users, Calendar, MapPin, Clock, CheckCircle, TrendingUp, Award, Star } from 'lucide-react';
 import { collection, query, getDocs, addDoc, updateDoc, doc, where } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { useFormSubmission } from '../hooks/useFormSubmission';
+import { LiveImpactDashboard } from '../components/ImpactCounter';
+import MotivationalBanner from '../components/MotivationalBanner';
+import AnimatedEmptyState from '../components/AnimatedIllustrations';
 import AnnamitraSevaForm from '../components/DonorForms/AnnamitraSevaForm';
 import VidyaJyothiForm from '../components/DonorForms/VidyaJyothiForm';
 import SurakshaSetuForm from '../components/DonorForms/SurakshaSetuForm';
@@ -25,11 +28,12 @@ interface CommunityRequest {
   createdAt: any;
   acceptedBy?: string;
   acceptedAt?: any;
+  completedAt?: any;
 }
 
 const DonorDashboard: React.FC = () => {
   const [selectedInitiative, setSelectedInitiative] = useState('annamitra-seva');
-  const [activeTab, setActiveTab] = useState<'donate' | 'requests'>('donate');
+  const [activeTab, setActiveTab] = useState<'donate' | 'requests' | 'impact'>('donate');
   const [communityRequests, setCommunityRequests] = useState<CommunityRequest[]>([]);
   const [requestsLoading, setRequestsLoading] = useState(true);
   const { submitForm, loading, error, success, resetForm } = useFormSubmission('donor');
@@ -42,7 +46,9 @@ const DonorDashboard: React.FC = () => {
       title: "🍛 Annamitra Seva",
       description: "Donate surplus food to feed hungry families in your community.",
       component: AnnamitraSevaForm,
-      available: true
+      available: true,
+      color: "from-green-500 to-green-600",
+      impact: "2,847 meals served"
     },
     {
       id: 'vidya-jyothi',
@@ -50,7 +56,9 @@ const DonorDashboard: React.FC = () => {
       title: "📚 Vidya Jyothi",
       description: "Support education through financial assistance for fees, books, and uniforms.",
       component: VidyaJyothiForm,
-      available: true
+      available: true,
+      color: "from-blue-500 to-blue-600",
+      impact: "156 students supported"
     },
     {
       id: 'suraksha-setu',
@@ -58,7 +66,9 @@ const DonorDashboard: React.FC = () => {
       title: "🤝 Suraksha Setu",
       description: "Donate items like clothing, books, and groceries for emergency support.",
       component: SurakshaSetuForm,
-      available: true
+      available: true,
+      color: "from-purple-500 to-purple-600",
+      impact: "89 families protected"
     },
     {
       id: 'punarasha',
@@ -66,7 +76,9 @@ const DonorDashboard: React.FC = () => {
       title: "🔄 PunarAsha",
       description: "Donate electronics, furniture, and other items for rehabilitation support.",
       component: PunarAshaForm,
-      available: true
+      available: true,
+      color: "from-pink-500 to-pink-600",
+      impact: "45 lives rebuilt"
     },
     {
       id: 'raksha-jyothi',
@@ -74,7 +86,9 @@ const DonorDashboard: React.FC = () => {
       title: "🚨 Raksha Jyothi",
       description: "Provide emergency support for medical, accident, or animal emergencies.",
       component: RakshaJyothiForm,
-      available: true
+      available: true,
+      color: "from-red-500 to-red-600",
+      impact: "24/7 emergency response"
     },
     {
       id: 'jyothi-nilayam',
@@ -82,7 +96,9 @@ const DonorDashboard: React.FC = () => {
       title: "🏠 Jyothi Nilayam",
       description: "Support shelters for humans and animals with full or partial donations.",
       component: JyothiNilayamForm,
-      available: true
+      available: true,
+      color: "from-orange-500 to-orange-600",
+      impact: "12 shelters supported"
     }
   ];
 
@@ -214,22 +230,27 @@ const DonorDashboard: React.FC = () => {
   if (success) {
     return (
       <div className="min-h-screen bg-gray-900 pt-20 flex items-center justify-center">
-        <div className="bg-gray-800 rounded-xl p-8 text-center max-w-md mx-4">
+        <div className="bg-gray-800 rounded-xl p-8 text-center max-w-md mx-4 border border-green-500">
           <div className="bg-green-500 p-4 rounded-full w-16 h-16 mx-auto mb-4 flex items-center justify-center">
             <Heart className="h-8 w-8 text-white" />
           </div>
-          <h2 className="text-2xl font-bold text-white mb-2">Donation Submitted!</h2>
+          <h2 className="text-2xl font-bold text-white mb-2">🎉 Donation Submitted!</h2>
           <p className="text-gray-300 mb-4">
             Thank you for your generous donation. Volunteers in your area will be notified and will contact you soon to arrange pickup/delivery.
           </p>
-          <div className="bg-green-500/20 border border-green-500 rounded-lg p-3">
+          <div className="bg-green-500/20 border border-green-500 rounded-lg p-3 mb-4">
             <p className="text-green-400 text-sm">
               Expected response time: 2-6 hours
             </p>
           </div>
+          <div className="bg-gradient-to-r from-green-600/20 to-blue-600/20 rounded-lg p-3 mb-4">
+            <p className="text-green-300 text-sm italic">
+              🧡 "This is not just a donation — it's a lifeline."
+            </p>
+          </div>
           <button
             onClick={resetForm}
-            className="mt-4 bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded-lg font-medium transition-colors"
+            className="bg-green-600 hover:bg-green-700 text-white px-6 py-2 rounded-lg font-medium transition-colors"
           >
             Make Another Donation
           </button>
@@ -243,6 +264,11 @@ const DonorDashboard: React.FC = () => {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Header */}
         <div className="text-center mb-12">
+          <div className="flex items-center justify-center mb-4">
+            <div className="bg-gradient-to-r from-green-500 to-blue-500 p-3 rounded-full">
+              <Heart className="h-8 w-8 text-white" />
+            </div>
+          </div>
           <h1 className="text-4xl sm:text-5xl font-bold text-white mb-4">
             Donor Dashboard
           </h1>
@@ -251,11 +277,18 @@ const DonorDashboard: React.FC = () => {
           </p>
         </div>
 
+        {/* Motivational Banner */}
+        <MotivationalBanner />
+
+        {/* Live Impact Dashboard */}
+        <LiveImpactDashboard />
+
         {/* Tab Navigation */}
         <div className="flex space-x-1 bg-gray-800 p-1 rounded-lg mb-8 w-fit mx-auto">
           {[
             { key: 'donate', label: 'Make Donation', icon: Heart },
-            { key: 'requests', label: 'Community Requests', icon: Users }
+            { key: 'requests', label: 'Community Requests', icon: Users },
+            { key: 'impact', label: 'Your Impact', icon: TrendingUp }
           ].map((tab) => {
             const Icon = tab.icon;
             return (
@@ -289,21 +322,26 @@ const DonorDashboard: React.FC = () => {
                     <button
                       key={initiative.id}
                       onClick={() => setSelectedInitiative(initiative.id)}
-                      className={`w-full text-left p-4 rounded-lg border-2 transition-all ${
+                      className={`w-full text-left p-4 rounded-lg border-2 transition-all hover:scale-105 ${
                         selectedInitiative === initiative.id
-                          ? 'border-green-500 bg-green-500/20'
+                          ? 'border-green-500 bg-green-500/20 shadow-lg'
                           : 'border-gray-600 bg-gray-800 hover:border-gray-500'
                       }`}
                     >
                       <div className="flex items-start space-x-3">
-                        <Icon className="h-6 w-6 mt-1 flex-shrink-0 text-green-400" />
-                        <div>
-                          <h3 className="font-medium text-lg text-white">
+                        <div className={`p-2 rounded-lg bg-gradient-to-r ${initiative.color}`}>
+                          <Icon className="h-5 w-5 text-white" />
+                        </div>
+                        <div className="flex-1">
+                          <h3 className="font-medium text-lg text-white mb-1">
                             {initiative.title}
                           </h3>
-                          <p className="text-sm mt-1 text-gray-300">
+                          <p className="text-sm text-gray-300 mb-2">
                             {initiative.description}
                           </p>
+                          <div className="text-xs text-green-400 font-medium">
+                            {initiative.impact}
+                          </div>
                         </div>
                       </div>
                     </button>
@@ -342,15 +380,17 @@ const DonorDashboard: React.FC = () => {
                 <p className="text-gray-400">Loading community requests...</p>
               </div>
             ) : communityRequests.length === 0 ? (
-              <div className="bg-gray-800 rounded-lg p-8 text-center">
-                <Users className="h-12 w-12 text-gray-500 mx-auto mb-4" />
-                <h3 className="text-xl font-semibold text-white mb-2">No pending requests</h3>
-                <p className="text-gray-400">All community requests have been fulfilled. Check back later!</p>
-              </div>
+              <AnimatedEmptyState
+                type="requests"
+                title="No pending requests"
+                description="All community requests have been fulfilled. Check back later for new opportunities to help!"
+                actionText="Make a Direct Donation"
+                onAction={() => setActiveTab('donate')}
+              />
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {communityRequests.map((request) => (
-                  <div key={request.id} className="bg-gray-800 rounded-lg p-6 hover:shadow-lg transition-all duration-300 border border-gray-700 hover:border-green-500/50">
+                  <div key={request.id} className="bg-gray-800 rounded-lg p-6 hover:shadow-lg transition-all duration-300 border border-gray-700 hover:border-green-500/50 transform hover:scale-105">
                     <div className="flex items-start justify-between mb-4">
                       <div className="flex items-center space-x-3">
                         <div className="text-2xl">{getInitiativeEmoji(request.initiative)}</div>
@@ -384,7 +424,7 @@ const DonorDashboard: React.FC = () => {
 
                     <button
                       onClick={() => handleAcceptRequest(request.id, request)}
-                      className="w-full bg-green-600 hover:bg-green-700 text-white py-3 rounded-lg font-semibold transition-colors flex items-center justify-center space-x-2"
+                      className="w-full bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white py-3 rounded-lg font-semibold transition-all duration-300 flex items-center justify-center space-x-2 transform hover:scale-105"
                     >
                       <Heart className="h-4 w-4" />
                       <span>Donate to Help</span>
@@ -396,50 +436,93 @@ const DonorDashboard: React.FC = () => {
           </div>
         )}
 
-        {/* Impact Stats */}
-        <div className="mt-16 bg-gray-800 rounded-xl p-8">
-          <h3 className="text-2xl font-bold text-white text-center mb-8">Your Impact</h3>
-          
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-            <div className="text-center">
-              <div className="bg-green-500 p-4 rounded-full w-16 h-16 mx-auto mb-4 flex items-center justify-center">
-                <Heart className="h-8 w-8 text-white" />
-              </div>
-              <p className="text-2xl font-bold text-white">25</p>
-              <p className="text-gray-400">Families Fed</p>
+        {activeTab === 'impact' && (
+          <div>
+            <div className="text-center mb-8">
+              <h2 className="text-3xl font-bold text-white mb-4">Your Impact Journey</h2>
+              <p className="text-gray-300 max-w-2xl mx-auto">
+                See the incredible difference you've made in your community through your generous donations.
+              </p>
             </div>
-            
-            <div className="text-center">
-              <div className="bg-blue-500 p-4 rounded-full w-16 h-16 mx-auto mb-4 flex items-center justify-center">
-                <BookOpen className="h-8 w-8 text-white" />
+
+            {/* Impact Stats */}
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+              <div className="bg-gradient-to-br from-green-500 to-green-600 p-6 rounded-xl text-white text-center">
+                <Heart className="h-8 w-8 mx-auto mb-2" />
+                <div className="text-2xl font-bold">25</div>
+                <div className="text-sm opacity-90">Families Fed</div>
               </div>
-              <p className="text-2xl font-bold text-white">12</p>
-              <p className="text-gray-400">Students Supported</p>
+              
+              <div className="bg-gradient-to-br from-blue-500 to-blue-600 p-6 rounded-xl text-white text-center">
+                <BookOpen className="h-8 w-8 mx-auto mb-2" />
+                <div className="text-2xl font-bold">12</div>
+                <div className="text-sm opacity-90">Students Supported</div>
+              </div>
+              
+              <div className="bg-gradient-to-br from-purple-500 to-purple-600 p-6 rounded-xl text-white text-center">
+                <Shield className="h-8 w-8 mx-auto mb-2" />
+                <div className="text-2xl font-bold">8</div>
+                <div className="text-sm opacity-90">Emergency Responses</div>
+              </div>
+              
+              <div className="bg-gradient-to-br from-orange-500 to-orange-600 p-6 rounded-xl text-white text-center">
+                <Building className="h-8 w-8 mx-auto mb-2" />
+                <div className="text-2xl font-bold">3</div>
+                <div className="text-sm opacity-90">Shelters Supported</div>
+              </div>
             </div>
-            
-            <div className="text-center">
-              <div className="bg-purple-500 p-4 rounded-full w-16 h-16 mx-auto mb-4 flex items-center justify-center">
-                <Shield className="h-8 w-8 text-white" />
+
+            {/* Achievement Badges */}
+            <div className="bg-gray-800 rounded-xl p-8 mb-8">
+              <h3 className="text-2xl font-bold text-white mb-6 text-center">🏆 Your Achievements</h3>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div className="text-center">
+                  <div className="bg-gradient-to-br from-yellow-400 to-yellow-500 p-4 rounded-full w-16 h-16 mx-auto mb-4 flex items-center justify-center">
+                    <Star className="h-8 w-8 text-white" />
+                  </div>
+                  <h4 className="text-white font-semibold mb-2">First Helper</h4>
+                  <p className="text-gray-400 text-sm">Completed your first donation</p>
+                  <div className="bg-green-500/20 text-green-400 px-3 py-1 rounded-full text-xs mt-2 inline-block">
+                    ✅ Earned
+                  </div>
+                </div>
+                
+                <div className="text-center">
+                  <div className="bg-gradient-to-br from-green-400 to-green-500 p-4 rounded-full w-16 h-16 mx-auto mb-4 flex items-center justify-center">
+                    <Heart className="h-8 w-8 text-white" />
+                  </div>
+                  <h4 className="text-white font-semibold mb-2">Community Hero</h4>
+                  <p className="text-gray-400 text-sm">Helped 50+ families</p>
+                  <div className="bg-yellow-500/20 text-yellow-400 px-3 py-1 rounded-full text-xs mt-2 inline-block">
+                    32/50 Progress
+                  </div>
+                </div>
+                
+                <div className="text-center">
+                  <div className="bg-gradient-to-br from-purple-400 to-purple-500 p-4 rounded-full w-16 h-16 mx-auto mb-4 flex items-center justify-center">
+                    <Award className="h-8 w-8 text-white" />
+                  </div>
+                  <h4 className="text-white font-semibold mb-2">Consistent Giver</h4>
+                  <p className="text-gray-400 text-sm">Donated for 30 consecutive days</p>
+                  <div className="bg-gray-500/20 text-gray-400 px-3 py-1 rounded-full text-xs mt-2 inline-block">
+                    🔒 Locked
+                  </div>
+                </div>
               </div>
-              <p className="text-2xl font-bold text-white">8</p>
-              <p className="text-gray-400">Emergency Responses</p>
             </div>
-            
-            <div className="text-center">
-              <div className="bg-yellow-500 p-4 rounded-full w-16 h-16 mx-auto mb-4 flex items-center justify-center">
-                <Building className="h-8 w-8 text-white" />
-              </div>
-              <p className="text-2xl font-bold text-white">3</p>
-              <p className="text-gray-400">Shelters Supported</p>
+
+            {/* Motivational Message */}
+            <div className="bg-gradient-to-r from-green-600 to-blue-600 rounded-xl p-8 text-center text-white">
+              <h3 className="text-2xl font-bold mb-4">🌟 Thank You for Making a Difference!</h3>
+              <p className="text-lg mb-4">
+                Your kindness has created ripples of hope in the community. Thank you for being part of the solution to hunger and need.
+              </p>
+              <p className="text-green-200 italic">
+                "Your small step today can become someone's reason to survive tomorrow."
+              </p>
             </div>
           </div>
-          
-          <div className="mt-8 text-center">
-            <p className="text-green-400 font-medium text-lg">
-              Thank you for making a difference in your community! 🙏
-            </p>
-          </div>
-        </div>
+        )}
       </div>
     </div>
   );

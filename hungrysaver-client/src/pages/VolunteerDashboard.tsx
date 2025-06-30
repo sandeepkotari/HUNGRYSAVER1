@@ -1,9 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
-import { MapPin, Calendar, User, Phone, Package, Clock, CheckCircle, AlertCircle } from 'lucide-react';
+import { MapPin, Calendar, User, Phone, Package, Clock, CheckCircle, AlertCircle, Award, TrendingUp, Heart } from 'lucide-react';
 import { getTasksByLocation, updateTaskStatus } from '../services/firestoreService';
 import { useAuth } from '../contexts/AuthContext';
 import { Task } from '../types/formTypes';
+import { LiveImpactDashboard } from '../components/ImpactCounter';
+import MotivationalBanner from '../components/MotivationalBanner';
+import AnimatedEmptyState from '../components/AnimatedIllustrations';
 
 const VolunteerDashboard: React.FC = () => {
   const { location } = useParams<{ location: string }>();
@@ -203,57 +206,63 @@ const VolunteerDashboard: React.FC = () => {
               </div>
             </div>
             <h1 className="text-4xl font-bold text-white mb-2">
-              Welcome back, {userData?.firstName}!
+              Welcome back, {userData?.firstName}! 👋
             </h1>
             <p className="text-gray-300">Ready to make a difference in {userData.location} today?</p>
           </div>
           
           <div className="mt-4 md:mt-0">
-            <div className="bg-green-500/20 border border-green-500 rounded-lg px-4 py-3">
+            <div className="bg-gradient-to-r from-green-500/20 to-blue-500/20 border border-green-500 rounded-lg px-4 py-3">
               <p className="text-green-400 font-medium">You've helped {stats.thisWeek} people this week! 🎉</p>
             </div>
           </div>
         </div>
 
+        {/* Motivational Banner */}
+        <MotivationalBanner />
+
+        {/* Live Impact Dashboard */}
+        <LiveImpactDashboard />
+
         {/* Stats Grid */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-          <div className="bg-gray-800 rounded-lg p-4">
+          <div className="bg-gradient-to-br from-green-500 to-green-600 rounded-lg p-4 text-white">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-2xl font-bold text-white">{stats.totalHelped}</p>
-                <p className="text-gray-400 text-sm">People Helped</p>
+                <p className="text-2xl font-bold">{stats.totalHelped}</p>
+                <p className="text-sm opacity-90">People Helped</p>
               </div>
-              <User className="h-8 w-8 text-green-400" />
+              <User className="h-8 w-8 opacity-80" />
             </div>
           </div>
           
-          <div className="bg-gray-800 rounded-lg p-4">
+          <div className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-lg p-4 text-white">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-2xl font-bold text-white">{stats.thisWeek}</p>
-                <p className="text-gray-400 text-sm">This Week</p>
+                <p className="text-2xl font-bold">{stats.thisWeek}</p>
+                <p className="text-sm opacity-90">This Week</p>
               </div>
-              <Calendar className="h-8 w-8 text-blue-400" />
+              <Calendar className="h-8 w-8 opacity-80" />
             </div>
           </div>
           
-          <div className="bg-gray-800 rounded-lg p-4">
+          <div className="bg-gradient-to-br from-purple-500 to-purple-600 rounded-lg p-4 text-white">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-2xl font-bold text-white">{stats.totalTasks}</p>
-                <p className="text-gray-400 text-sm">Total Tasks</p>
+                <p className="text-2xl font-bold">{stats.totalTasks}</p>
+                <p className="text-sm opacity-90">Total Tasks</p>
               </div>
-              <Package className="h-8 w-8 text-purple-400" />
+              <Package className="h-8 w-8 opacity-80" />
             </div>
           </div>
           
-          <div className="bg-gray-800 rounded-lg p-4">
+          <div className="bg-gradient-to-br from-yellow-500 to-yellow-600 rounded-lg p-4 text-white">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-2xl font-bold text-white">{stats.completionRate}%</p>
-                <p className="text-gray-400 text-sm">Success Rate</p>
+                <p className="text-2xl font-bold">{stats.completionRate}%</p>
+                <p className="text-sm opacity-90">Success Rate</p>
               </div>
-              <CheckCircle className="h-8 w-8 text-yellow-400" />
+              <CheckCircle className="h-8 w-8 opacity-80" />
             </div>
           </div>
         </div>
@@ -294,21 +303,30 @@ const VolunteerDashboard: React.FC = () => {
         {/* Tasks Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {getFilteredTasks().length === 0 ? (
-            <div className="col-span-full bg-gray-800 rounded-lg p-8 text-center">
-              <AlertCircle className="h-12 w-12 text-gray-500 mx-auto mb-4" />
-              <h3 className="text-xl font-semibold text-white mb-2">No tasks available</h3>
-              <p className="text-gray-400">
-                {filter === 'available' 
-                  ? `No new tasks in ${userData.location} right now. Check back later!`
-                  : filter === 'assigned'
-                  ? 'You haven\'t accepted any tasks yet.'
-                  : 'No tasks found for your location.'
+            <div className="col-span-full">
+              <AnimatedEmptyState
+                type="volunteers"
+                title={
+                  filter === 'available' 
+                    ? `No new tasks in ${userData.location} right now`
+                    : filter === 'assigned'
+                    ? 'You haven\'t accepted any tasks yet'
+                    : 'No tasks found for your location'
                 }
-              </p>
+                description={
+                  filter === 'available'
+                    ? 'Check back later for new opportunities to help your community!'
+                    : filter === 'assigned'
+                    ? 'Accept some available tasks to start making a difference!'
+                    : 'Tasks will appear here when they become available.'
+                }
+                actionText={filter === 'assigned' ? 'View Available Tasks' : undefined}
+                onAction={filter === 'assigned' ? () => setFilter('available') : undefined}
+              />
             </div>
           ) : (
             getFilteredTasks().map((task) => (
-              <div key={task.id} className="bg-gray-800 rounded-lg p-6 hover:shadow-lg transition-all duration-300 border border-gray-700 hover:border-green-500/50">
+              <div key={task.id} className="bg-gray-800 rounded-lg p-6 hover:shadow-lg transition-all duration-300 border border-gray-700 hover:border-green-500/50 transform hover:scale-105">
                 <div className="flex items-start justify-between mb-4">
                   <div className="flex items-center space-x-3">
                     <div className="text-2xl">{getInitiativeEmoji(task.initiative)}</div>
@@ -356,7 +374,7 @@ const VolunteerDashboard: React.FC = () => {
                     <>
                       <button
                         onClick={() => handleTaskAction(task.id, 'accept', task.type)}
-                        className="flex-1 bg-green-600 hover:bg-green-700 text-white py-2 px-4 rounded-md text-sm font-medium transition-colors"
+                        className="flex-1 bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white py-2 px-4 rounded-md text-sm font-medium transition-all duration-300 transform hover:scale-105"
                       >
                         Accept {task.type === 'donation' ? 'Donation' : 'Request'}
                       </button>
@@ -372,7 +390,7 @@ const VolunteerDashboard: React.FC = () => {
                   {task.status === 'accepted' && task.assignedTo === userData?.uid && (
                     <button
                       onClick={() => handleTaskAction(task.id, 'picked', task.type)}
-                      className="flex-1 bg-orange-600 hover:bg-orange-700 text-white py-2 px-4 rounded-md text-sm font-medium transition-colors"
+                      className="flex-1 bg-gradient-to-r from-orange-600 to-orange-700 hover:from-orange-700 hover:to-orange-800 text-white py-2 px-4 rounded-md text-sm font-medium transition-all duration-300 transform hover:scale-105"
                     >
                       Mark as {task.type === 'donation' ? 'Picked Up' : 'In Progress'}
                     </button>
@@ -381,7 +399,7 @@ const VolunteerDashboard: React.FC = () => {
                   {task.status === 'picked' && task.assignedTo === userData?.uid && (
                     <button
                       onClick={() => handleTaskAction(task.id, 'delivered', task.type)}
-                      className="flex-1 bg-green-600 hover:bg-green-700 text-white py-2 px-4 rounded-md text-sm font-medium transition-colors"
+                      className="flex-1 bg-gradient-to-r from-green-600 to-green-700 hover:from-green-700 hover:to-green-800 text-white py-2 px-4 rounded-md text-sm font-medium transition-all duration-300 transform hover:scale-105"
                     >
                       Mark as {task.type === 'donation' ? 'Delivered' : 'Completed'}
                     </button>
@@ -401,11 +419,17 @@ const VolunteerDashboard: React.FC = () => {
         {/* Motivational Footer */}
         <div className="mt-12 text-center bg-gradient-to-r from-green-600/20 to-green-700/20 rounded-lg p-8 border border-green-500/30">
           <h3 className="text-2xl font-bold text-white mb-2">Making Impact in {userData.location}</h3>
-          <p className="text-green-300 text-lg italic">
+          <p className="text-green-300 text-lg italic mb-4">
             "Every task you complete brings hope to someone in your community"
           </p>
-          <div className="mt-4 text-gray-300">
+          <div className="text-gray-300">
             <p>Together, {userData.location} volunteers have helped <span className="text-green-400 font-bold">500+</span> families this month!</p>
+          </div>
+          
+          {/* Achievement Badge */}
+          <div className="mt-6 inline-flex items-center space-x-2 bg-gradient-to-r from-yellow-500/20 to-orange-500/20 border border-yellow-500/30 rounded-full px-6 py-3">
+            <Award className="h-5 w-5 text-yellow-400" />
+            <span className="text-yellow-300 font-medium">Community Hero Badge Earned!</span>
           </div>
         </div>
       </div>
